@@ -1114,5 +1114,11 @@
     "litematica.tool_mode.name.replace_block": "替换方块",
     "litematica.tool_mode.name.schematic_placement": "原理图放置",
     "litematica.warning.area_editor.area_rendering_disabled": "§6注意：选区框渲染已禁用\n请查看 视效 -> %s\n或快捷键 -> %s ['%s']§r",
+    "litematica.gui.button.rvc_test_commit.create": "测试RVC提交",
+    "litematica.error.rvc_test_commit.failed": "创建RVC测试提交失败：%s",
+    "litematica.error.rvc_test_commit.no_player": "需要当前玩家才能创建RVC测试提交",
+    "litematica.error.rvc_test_commit.no_world": "需要当前世界才能创建RVC测试提交",
+    "litematica.error.rvc_test_commit.repository_exists": "RVC仓库已存在：%s",
+    "litematica.message.rvc_test_commit.created": "已在 %s 创建RVC仓库，提交为 %s",
     "modmenu.descriptionTranslation.litematica": "适用于LiteLoader、Rift、Fabric等的现代化的原理图投影Mod。"
 }

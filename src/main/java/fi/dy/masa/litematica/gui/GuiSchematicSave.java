@@ -78,6 +78,12 @@ public class GuiSchematicSave extends GuiSchematicSaveBase implements ICompletio
     }
 
     @Override
+    protected boolean shouldShowRvcTestCommitButton()
+    {
+        return true;
+    }
+
+    @Override
     public void onTaskCompleted()
     {
         if (this.mc.isSameThread())

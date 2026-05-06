@@ -4,6 +4,7 @@ plugins {
 }
 
 repositories {
+	mavenCentral()
 	maven { url = "https://masa.dy.fi/maven/sakura-ryoko"
 		content {includeGroupAndSubgroups("fi.dy.masa")}
 	}
@@ -24,6 +25,7 @@ dependencies {
 //    mappings loom.officialMojangMappings()
 	implementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
 	implementation "com.google.code.findbugs:jsr305:3.0.2"
+	implementation "org.eclipse.jgit:org.eclipse.jgit:7.6.0.202603022253-r"
 //	implementation "org.jspecify:jspecify:1.0.0"
 
 	implementation "fi.dy.masa.malilib:malilib-fabric-${project.minecraft_version_out}:${project.malilib_version}"
@@ -39,6 +41,24 @@ dependencies {
 //	compileOnly "maven.modrinth:iris:${project.iris_version}+${project.iris_mc_version}-fabric"
 //	runtimeOnly 'me.fallenbreath:mixin-auditor:0.2.0-u'
 }
+
+sourceSets {
+	integrationTest {
+		java.srcDir file('src/integrationTest/java')
+		resources.srcDir file('src/integrationTest/resources')
+		compileClasspath += sourceSets.main.output + configurations.runtimeClasspath
+		runtimeClasspath += output + compileClasspath
+	}
+}
+
+tasks.register('integrationTest', JavaExec) {
+	group = 'verification'
+	description = 'Runs integration tests without mocks.'
+	classpath = sourceSets.integrationTest.runtimeClasspath
+	mainClass = 'me.zly2006.rvc.RvcRepositoryIntegrationTest'
+}
+
+check.dependsOn integrationTest
 
 base {
 	group = project.group + "." + project.mod_id

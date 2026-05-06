@@ -1114,5 +1114,11 @@
     "litematica.tool_mode.name.replace_block": "Replace block",
     "litematica.tool_mode.name.schematic_placement": "Schematic Placement",
     "litematica.warning.area_editor.area_rendering_disabled": "Note: The Area Selection boxes rendering is currently disabled\nSee Visuals -> %s, or Hotkeys -> %s ['%s']",
+    "litematica.gui.button.rvc_test_commit.create": "Test RVC commit",
+    "litematica.error.rvc_test_commit.failed": "Failed to create RVC test commit: %s",
+    "litematica.error.rvc_test_commit.no_player": "A player is required to create an RVC test commit",
+    "litematica.error.rvc_test_commit.no_world": "A world is required to create an RVC test commit",
+    "litematica.error.rvc_test_commit.repository_exists": "RVC repository already exists: %s",
+    "litematica.message.rvc_test_commit.created": "Created RVC repository at %s with commit %s",
     "modmenu.descriptionTranslation.litematica": "A modern schematic mod for LiteLoader, Rift, Fabric etc."
 }
