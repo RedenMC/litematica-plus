@@ -7,6 +7,7 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.player.Player;
+import fi.dy.masa.malilib.gui.GuiBase;
 import fi.dy.masa.malilib.gui.GuiTextFieldGeneric;
 import fi.dy.masa.malilib.gui.Message.MessageType;
 import fi.dy.masa.malilib.gui.button.ButtonBase;
@@ -23,8 +24,9 @@ import fi.dy.masa.malilib.util.StringUtils;
 import fi.dy.masa.litematica.schematic.LitematicaSchematic;
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.selection.AreaSelection;
-import me.zly2006.rvc.RvcGameTestCommit;
+import me.zly2006.rvc.GuiRvcProjectManager;
 import me.zly2006.rvc.RvcPlayerIdentity;
+import me.zly2006.rvc.RvcProjectService;
 
 public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase implements ISelectionListener<DirectoryEntry>
 {
@@ -105,9 +107,9 @@ public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase imple
 
         int buttonX = this.createButton(10, 54, ButtonType.SAVE);
 
-        if (this.shouldShowRvcTestCommitButton())
+        if (this.shouldShowCreateRvcProjectButton())
         {
-            this.createButton(buttonX, 54, ButtonType.TEST_RVC_COMMIT);
+            this.createButton(buttonX, 54, ButtonType.CREATE_RVC_PROJECT);
         }
     }
 
@@ -124,7 +126,7 @@ public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase imple
 
     protected abstract IButtonActionListener createButtonListener(ButtonType type);
 
-    protected boolean shouldShowRvcTestCommitButton()
+    protected boolean shouldShowCreateRvcProjectButton()
     {
         return false;
     }
@@ -145,7 +147,7 @@ public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase imple
             button = new ButtonGeneric(x, y, width, 20, label);
         }
 
-        this.addButton(button, type == ButtonType.TEST_RVC_COMMIT ? new ButtonListenerRvcTestCommit(this) : this.createButtonListener(type));
+        this.addButton(button, type == ButtonType.CREATE_RVC_PROJECT ? new ButtonListenerCreateRvcProject(this) : this.createButtonListener(type));
 
         return x + width + 4;
     }
@@ -223,7 +225,7 @@ public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase imple
     public enum ButtonType
     {
         SAVE ("litematica.gui.button.save_schematic"),
-        TEST_RVC_COMMIT ("litematica.gui.button.rvc_test_commit.create");
+        CREATE_RVC_PROJECT ("litematica.gui.button.rvc_project.create");
 
         private final String labelKey;
 
@@ -238,7 +240,7 @@ public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase imple
         }
     }
 
-    private record ButtonListenerRvcTestCommit(GuiSchematicSaveBase gui) implements IButtonActionListener
+    private record ButtonListenerCreateRvcProject(GuiSchematicSaveBase gui) implements IButtonActionListener
     {
         @Override
         public void actionPerformedWithButton(ButtonBase button, int mouseButton)
@@ -248,13 +250,13 @@ public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase imple
 
             if (player == null)
             {
-                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_test_commit.no_player");
+                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_player");
                 return;
             }
 
             if (minecraft.level == null)
             {
-                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_test_commit.no_world");
+                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
                 return;
             }
 
@@ -277,7 +279,7 @@ public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase imple
             try
             {
                 RvcPlayerIdentity identity = new RvcPlayerIdentity(player.getName().getString(), player.getUUID());
-                RvcGameTestCommit.Result result = RvcGameTestCommit.create(
+                RvcProjectService.Result result = RvcProjectService.createProject(
                         minecraft.gameDirectory.toPath(),
                         repositoryName,
                         identity,
@@ -285,15 +287,16 @@ public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase imple
                         selection,
                         this.gui.checkboxIgnoreEntities.isChecked()
                 );
-                this.gui.addMessage(MessageType.SUCCESS, "litematica.message.rvc_test_commit.created", result.repositoryDirectory(), result.commitId());
+                this.gui.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.created", result.repositoryDirectory(), result.commitId());
+                GuiBase.openGui(new GuiRvcProjectManager());
             }
             catch (FileAlreadyExistsException e)
             {
-                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_test_commit.repository_exists", e.getFile());
+                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_project.repository_exists", e.getFile());
             }
             catch (Exception e)
             {
-                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_test_commit.failed", e.getMessage());
+                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_project.create_failed", e.getMessage());
             }
         }
     }

@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
+import javax.annotation.Nullable;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.dircache.DirCache;
@@ -31,16 +32,7 @@ public final class RvcRepository
 
     public static RevCommit init(Path directory, String name, byte[] schematicBytes, RvcPlayerIdentity player) throws IOException, GitAPIException
     {
-        Objects.requireNonNull(directory, "directory");
-        Objects.requireNonNull(schematicBytes, "schematicBytes");
-        Objects.requireNonNull(player, "player");
-        validateName(name);
-
-        Files.createDirectories(directory);
-        writeProjectMetadata(directory, name);
-        Files.write(directory.resolve(INDEX_SCHEMATIC), schematicBytes);
-
-        return commitInitialRvcRepository(directory, player);
+        return commit(directory, name, schematicBytes, player, null, "init");
     }
 
     public static RevCommit initFromSavedSchematic(Path directory, String name, Path schematicFile, RvcPlayerIdentity player) throws IOException, GitAPIException
@@ -51,9 +43,30 @@ public final class RvcRepository
 
     public static RevCommit init(Path directory, String name, SchematicaSchematic schematic, RvcPlayerIdentity player) throws IOException, GitAPIException
     {
+        return commit(directory, name, schematic, player, null, "init");
+    }
+
+    public static RevCommit commit(Path directory, String name, byte[] schematicBytes, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
+    {
+        Objects.requireNonNull(directory, "directory");
+        Objects.requireNonNull(schematicBytes, "schematicBytes");
+        Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(message, "message");
+        validateName(name);
+
+        Files.createDirectories(directory);
+        writeProjectMetadata(directory, name);
+        Files.write(directory.resolve(INDEX_SCHEMATIC), schematicBytes);
+
+        return commitRvcRepository(directory, player, parent, message);
+    }
+
+    public static RevCommit commit(Path directory, String name, SchematicaSchematic schematic, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
+    {
         Objects.requireNonNull(directory, "directory");
         Objects.requireNonNull(schematic, "schematic");
         Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(message, "message");
         validateName(name);
 
         Files.createDirectories(directory);
@@ -64,19 +77,23 @@ public final class RvcRepository
             throw new IOException("Failed to write RVC schematic file: " + directory.resolve(INDEX_SCHEMATIC));
         }
 
-        return commitInitialRvcRepository(directory, player);
+        return commitRvcRepository(directory, player, parent, message);
     }
 
-    private static RevCommit commitInitialRvcRepository(Path directory, RvcPlayerIdentity player) throws IOException, GitAPIException
+    @Nullable
+    public static ObjectId resolveHead(Path directory) throws IOException
+    {
+        try (Repository repository = org.eclipse.jgit.storage.file.FileRepositoryBuilder.create(directory.resolve(".git").toFile()))
+        {
+            return repository.resolve(Constants.HEAD);
+        }
+    }
+
+    private static RevCommit commitRvcRepository(Path directory, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
     {
         try (Git git = openOrCreateGit(directory))
         {
             Repository repository = git.getRepository();
-
-            if (repository.resolve(Constants.HEAD) != null)
-            {
-                throw new IOException("RVC repository already has commits: " + directory);
-            }
 
             git.add()
                     .addFilepattern(INDEX_JSON)
@@ -84,7 +101,7 @@ public final class RvcRepository
                     .addFilepattern(README)
                     .call();
 
-            ObjectId commitId = createInitialCommit(repository, player, "init");
+            ObjectId commitId = createCommit(repository, player, parent, message);
 
             try (RevWalk revWalk = new RevWalk(repository))
             {
@@ -159,7 +176,7 @@ public final class RvcRepository
         return builder.toString();
     }
 
-    private static ObjectId createInitialCommit(Repository repository, RvcPlayerIdentity player, String message) throws IOException
+    private static ObjectId createCommit(Repository repository, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException
     {
         PersonIdent identity = player.toPersonIdent();
 
@@ -167,38 +184,46 @@ public final class RvcRepository
         {
             DirCache dirCache = repository.readDirCache();
             ObjectId treeId = dirCache.writeTree(inserter);
-            ObjectId commitId = inserter.insert(Constants.OBJ_COMMIT, createCommitBytes(treeId, identity, message));
+            ObjectId commitId = inserter.insert(Constants.OBJ_COMMIT, createCommitBytes(treeId, identity, parent, message));
             inserter.flush();
-            updateHead(repository, commitId, identity, message);
+            updateHead(repository, commitId, identity, parent, message);
             return commitId;
         }
     }
 
-    private static byte[] createCommitBytes(ObjectId treeId, PersonIdent identity, String message)
+    private static byte[] createCommitBytes(ObjectId treeId, PersonIdent identity, @Nullable ObjectId parent, String message)
     {
-        String commit = "tree " + treeId.name() + "\n" +
-                "author " + identity.toExternalString() + "\n" +
-                "committer " + identity.toExternalString() + "\n" +
-                "rvc-version " + RVC_VERSION + "\n" +
-                "x-created-by rvc\n" +
-                "\n" +
-                message + "\n";
+        StringBuilder commit = new StringBuilder(256);
+        commit.append("tree ").append(treeId.name()).append('\n');
 
-        return commit.getBytes(StandardCharsets.UTF_8);
+        if (parent != null)
+        {
+            commit.append("parent ").append(parent.name()).append('\n');
+        }
+
+        commit.append("author ").append(identity.toExternalString()).append('\n');
+        commit.append("committer ").append(identity.toExternalString()).append('\n');
+        commit.append("rvc-version ").append(RVC_VERSION).append('\n');
+        commit.append("x-created-by rvc\n");
+        commit.append('\n');
+        commit.append(message).append('\n');
+
+        return commit.toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    private static void updateHead(Repository repository, ObjectId commitId, PersonIdent identity, String message) throws IOException
+    private static void updateHead(Repository repository, ObjectId commitId, PersonIdent identity, @Nullable ObjectId parent, String message) throws IOException
     {
         RefUpdate refUpdate = repository.updateRef(repository.getFullBranch());
         refUpdate.setNewObjectId(commitId);
+        refUpdate.setExpectedOldObjectId(parent != null ? parent : ObjectId.zeroId());
         refUpdate.setRefLogIdent(identity);
-        refUpdate.setRefLogMessage("commit (initial): " + message, false);
+        refUpdate.setRefLogMessage("commit: " + message, false);
 
         RefUpdate.Result result = refUpdate.update();
 
-        if (result != RefUpdate.Result.NEW && result != RefUpdate.Result.FAST_FORWARD && result != RefUpdate.Result.FORCED)
+        if (result != RefUpdate.Result.NEW && result != RefUpdate.Result.FAST_FORWARD)
         {
-            throw new IOException("Failed to update HEAD for RVC init commit: " + result);
+            throw new IOException("Failed to update HEAD for RVC commit: " + result);
         }
     }
 }

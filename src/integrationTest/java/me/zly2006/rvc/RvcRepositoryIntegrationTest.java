@@ -5,6 +5,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -20,6 +21,7 @@ import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevTree;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import fi.dy.masa.litematica.schematic.SchematicaSchematic;
 import fi.dy.masa.litematica.schematic.container.LitematicaBlockStateContainer;
@@ -31,6 +33,65 @@ public class RvcRepositoryIntegrationTest
     {
         IntegrationTestSupport.run("init writes RVC files and creates the first Git commit", RvcRepositoryIntegrationTest::initWritesRvcFilesAndCreatesTheFirstGitCommit);
         IntegrationTestSupport.run("init commits an index schematic saved by SchematicaSchematic", RvcRepositoryIntegrationTest::initCommitsAnIndexSchematicSavedBySchematicaSchematic);
+        IntegrationTestSupport.run("commit uses the supplied parent and history lists newest commits first", RvcRepositoryIntegrationTest::commitUsesSuppliedParentAndHistoryListsNewestFirst);
+        IntegrationTestSupport.run("project service lists valid repositories and pushes to a remote", RvcRepositoryIntegrationTest::projectServiceListsValidRepositoriesAndPushesToRemote);
+    }
+
+    private static void commitUsesSuppliedParentAndHistoryListsNewestFirst() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-commit-parent-");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderThree", UUID.fromString("123e4567-e89b-12d3-a456-426614174004"));
+
+        RevCommit first = RvcRepository.commit(repoDir, "Parent Driven", createTinySchematicaSchematic(), player, null, "init");
+        RevCommit second = RvcRepository.commit(repoDir, "Parent Driven", createTinySchematicaSchematic(), player, first.getId(), "update from world");
+
+        try (Git git = Git.open(repoDir.toFile()))
+        {
+            Repository repository = git.getRepository();
+
+            try (RevWalk revWalk = new RevWalk(repository))
+            {
+                RevCommit parsedSecond = revWalk.parseCommit(repository.resolve(Constants.HEAD));
+                IntegrationTestSupport.assertEquals(second.getId(), parsedSecond.getId(), "HEAD should point at the second commit");
+                IntegrationTestSupport.assertEquals(1, parsedSecond.getParentCount(), "second commit should use the supplied parent");
+                IntegrationTestSupport.assertEquals(first.getId(), parsedSecond.getParent(0).getId(), "second commit parent id");
+            }
+        }
+
+        List<RvcProjectService.CommitInfo> history = RvcProjectService.listCommits(repoDir);
+        IntegrationTestSupport.assertEquals(2, history.size(), "history size");
+        IntegrationTestSupport.assertEquals(second.getName(), history.get(0).id(), "newest commit first");
+        IntegrationTestSupport.assertEquals("update from world", history.get(0).message(), "newest commit message");
+        IntegrationTestSupport.assertEquals(first.getName(), history.get(1).id(), "oldest commit second");
+    }
+
+    private static void projectServiceListsValidRepositoriesAndPushesToRemote() throws Exception
+    {
+        Path runDir = Files.createTempDirectory("rvc-run-");
+        Path reposDir = runDir.resolve("repos");
+        Path validRepo = reposDir.resolve("Valid Project");
+        Path invalidRepo = reposDir.resolve("Not Git");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderFour", UUID.fromString("123e4567-e89b-12d3-a456-426614174005"));
+
+        RvcRepository.commit(validRepo, "Valid Project", createTinySchematicaSchematic(), player, null, "init");
+        Files.createDirectories(invalidRepo);
+
+        List<RvcProjectService.Project> projects = RvcProjectService.listProjects(runDir);
+        IntegrationTestSupport.assertEquals(1, projects.size(), "only valid git repositories should be listed");
+        IntegrationTestSupport.assertEquals("Valid Project", projects.get(0).name(), "listed project name");
+        IntegrationTestSupport.assertEquals(validRepo, projects.get(0).directory(), "listed project directory");
+
+        Path remoteDir = Files.createTempDirectory("rvc-remote-").resolve("remote.git");
+        try (Git ignored = Git.init().setBare(true).setDirectory(remoteDir.toFile()).call())
+        {
+            RvcProjectService.setRemote(validRepo, remoteDir.toUri().toString());
+            RvcProjectService.push(validRepo);
+        }
+
+        try (Repository remoteRepository = new FileRepositoryBuilder().setGitDir(remoteDir.toFile()).build())
+        {
+            IntegrationTestSupport.assertNotNull(remoteRepository.resolve(Constants.HEAD), "remote should receive pushed HEAD");
+        }
     }
 
     private static void initWritesRvcFilesAndCreatesTheFirstGitCommit() throws Exception

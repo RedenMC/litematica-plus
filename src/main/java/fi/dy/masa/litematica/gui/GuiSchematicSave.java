@@ -78,7 +78,7 @@ public class GuiSchematicSave extends GuiSchematicSaveBase implements ICompletio
     }
 
     @Override
-    protected boolean shouldShowRvcTestCommitButton()
+    protected boolean shouldShowCreateRvcProjectButton()
     {
         return true;
     }

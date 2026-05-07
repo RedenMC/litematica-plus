@@ -26,6 +26,7 @@ dependencies {
 	implementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
 	implementation "com.google.code.findbugs:jsr305:3.0.2"
 	implementation "org.eclipse.jgit:org.eclipse.jgit:7.6.0.202603022253-r"
+	implementation "org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.6.0.202603022253-r"
 //	implementation "org.jspecify:jspecify:1.0.0"
 
 	implementation "fi.dy.masa.malilib:malilib-fabric-${project.minecraft_version_out}:${project.malilib_version}"
