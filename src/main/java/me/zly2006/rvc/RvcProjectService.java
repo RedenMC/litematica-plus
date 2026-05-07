@@ -92,7 +92,7 @@ public final class RvcProjectService
         return new Result(repositoryDirectory, commit.getName());
     }
 
-    public static RevCommit commitStoredSelectionWithCurrentSelectionFallback(Path repositoryDirectory, String projectName, RvcPlayerIdentity player, Level world, @Nullable AreaSelection currentSelectionFallback, boolean ignoreEntities, String message) throws Exception
+    public static RevCommit gitCommit(Path repositoryDirectory, String projectName, RvcPlayerIdentity player, Level world, @Nullable AreaSelection currentSelectionFallback, boolean ignoreEntities, String message) throws Exception
     {
         Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
         Objects.requireNonNull(player, "player");

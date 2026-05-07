@@ -341,7 +341,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         try
         {
             RvcPlayerIdentity identity = new RvcPlayerIdentity(player.getName().getString(), player.getUUID());
-            RvcProjectService.commitStoredSelectionWithCurrentSelectionFallback(this.repositoryDirectory, this.projectName, identity, world, selectionFallback, false, message);
+            RvcProjectService.gitCommit(this.repositoryDirectory, this.projectName, identity, world, selectionFallback, false, message);
             this.loadTrackingOverlay();
             this.initGui();
             this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.committed");
