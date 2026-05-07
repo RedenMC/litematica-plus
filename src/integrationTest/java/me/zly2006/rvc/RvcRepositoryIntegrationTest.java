@@ -9,6 +9,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import net.minecraft.core.BlockPos;
 import net.minecraft.DetectedVersion;
 import net.minecraft.SharedConstants;
@@ -25,6 +28,8 @@ import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import fi.dy.masa.litematica.schematic.SchematicaSchematic;
 import fi.dy.masa.litematica.schematic.container.LitematicaBlockStateContainer;
+import fi.dy.masa.litematica.selection.AreaSelection;
+import fi.dy.masa.malilib.util.data.json.JsonUtils;
 import fi.dy.masa.malilib.util.nbt.NbtUtils;
 
 public class RvcRepositoryIntegrationTest
@@ -35,6 +40,7 @@ public class RvcRepositoryIntegrationTest
         IntegrationTestSupport.run("init commits an index schematic saved by SchematicaSchematic", RvcRepositoryIntegrationTest::initCommitsAnIndexSchematicSavedBySchematicaSchematic);
         IntegrationTestSupport.run("commit uses the supplied parent and history lists newest commits first", RvcRepositoryIntegrationTest::commitUsesSuppliedParentAndHistoryListsNewestFirst);
         IntegrationTestSupport.run("project service lists valid repositories and pushes to a remote", RvcRepositoryIntegrationTest::projectServiceListsValidRepositoriesAndPushesToRemote);
+        IntegrationTestSupport.run("local selection is stored in local.json and ignored by Git", RvcRepositoryIntegrationTest::localSelectionIsStoredInLocalJsonAndIgnoredByGit);
     }
 
     private static void commitUsesSuppliedParentAndHistoryListsNewestFirst() throws Exception
@@ -133,10 +139,58 @@ public class RvcRepositoryIntegrationTest
                 IntegrationTestSupport.assertTrue(rawCommit.contains("\nx-created-by rvc\n"), "commit should contain x-created-by metadata");
 
                 Set<String> files = listTreeFiles(repository, commit.getTree());
-                IntegrationTestSupport.assertEquals(Set.of("README.md", "index.json", "index.schematic"), files, "committed files");
+                IntegrationTestSupport.assertEquals(Set.of(".gitignore", "README.md", "index.json", "index.schematic"), files, "committed files");
                 IntegrationTestSupport.assertTrue(git.status().call().isClean(), "working tree should be clean after init commit");
             }
         }
+    }
+
+    private static void localSelectionIsStoredInLocalJsonAndIgnoredByGit() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-local-selection-");
+        AreaSelection selection = createAreaSelectionFromJson("Stored Selection");
+
+        RvcProjectService.writeLocalSelection(repoDir, selection);
+        RvcRepository.commit(repoDir, "Local Selection", "schematic bytes".getBytes(StandardCharsets.UTF_8), new RvcPlayerIdentity("BuilderFive", UUID.fromString("123e4567-e89b-12d3-a456-426614174006")), null, "init");
+
+        IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcProjectService.LOCAL_JSON), "\"local_selection\"");
+        IntegrationTestSupport.assertFileContains(repoDir.resolve(".gitignore"), "/local.json");
+
+        AreaSelection loaded = RvcProjectService.readLocalSelection(repoDir);
+        IntegrationTestSupport.assertNotNull(loaded, "local selection should be readable");
+        IntegrationTestSupport.assertEquals("Stored Selection", loaded.getName(), "local selection name");
+        IntegrationTestSupport.assertEquals(1, loaded.getAllSubRegionBoxes().size(), "local selection boxes");
+
+        try (Git git = Git.open(repoDir.toFile()))
+        {
+            Repository repository = git.getRepository();
+
+            try (RevWalk revWalk = new RevWalk(repository))
+            {
+                RevCommit commit = revWalk.parseCommit(repository.resolve(Constants.HEAD));
+                Set<String> files = listTreeFiles(repository, commit.getTree());
+                IntegrationTestSupport.assertTrue(files.contains(RvcProjectService.LOCAL_JSON) == false, "local.json should not be committed");
+                IntegrationTestSupport.assertTrue(git.status().call().isClean(), "local.json should be ignored");
+            }
+        }
+    }
+
+    private static AreaSelection createAreaSelectionFromJson(String name)
+    {
+        JsonObject selection = new JsonObject();
+        JsonArray boxes = new JsonArray();
+        JsonObject box = new JsonObject();
+
+        box.add("name", new JsonPrimitive("main"));
+        box.add("pos1", JsonUtils.blockPosToJson(new BlockPos(1, 2, 3)));
+        box.add("pos2", JsonUtils.blockPosToJson(new BlockPos(2, 3, 4)));
+        boxes.add(box);
+
+        selection.add("name", new JsonPrimitive(name));
+        selection.add("current", new JsonPrimitive("main"));
+        selection.add("boxes", boxes);
+
+        return AreaSelection.fromJson(selection);
     }
 
     private static Set<String> listTreeFiles(Repository repository, RevTree tree) throws Exception

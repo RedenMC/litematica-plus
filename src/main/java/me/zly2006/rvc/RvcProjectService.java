@@ -1,6 +1,7 @@
 package me.zly2006.rvc;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,6 +13,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import javax.annotation.Nullable;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.apache.commons.lang3.tuple.Pair;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.PullResult;
@@ -33,8 +39,11 @@ import fi.dy.masa.litematica.util.PositionUtils;
 public final class RvcProjectService
 {
     public static final String REPOS_DIRECTORY = "repos";
+    public static final String LOCAL_JSON = "local.json";
+    public static final String LOCAL_SELECTION_KEY = "local_selection";
     public static final String DEFAULT_REMOTE_URL = "git@github.com:zly2006/rvc-v2-test.git";
 
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final DateTimeFormatter COMMIT_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private RvcProjectService()
@@ -56,23 +65,72 @@ public final class RvcProjectService
             throw new FileAlreadyExistsException(repositoryDirectory.toString());
         }
 
-        SchematicaSchematic schematic = createSchematicFromSelection(world, selection, ignoreEntities);
+        Files.createDirectories(repositoryDirectory);
+        writeLocalSelection(repositoryDirectory, selection);
+
+        SchematicaSchematic schematic = createSchematicFromSelectionBoxes(world, getValidBoxes(selection), ignoreEntities);
         RevCommit commit = RvcRepository.commit(repositoryDirectory, displayName, schematic, player, null, "init");
 
         return new Result(repositoryDirectory, commit.getName());
     }
 
-    public static RevCommit commitCurrentSelection(Path repositoryDirectory, String projectName, RvcPlayerIdentity player, Level world, AreaSelection selection, boolean ignoreEntities, String message) throws Exception
+    public static RevCommit commitStoredSelectionWithCurrentSelectionFallback(Path repositoryDirectory, String projectName, RvcPlayerIdentity player, Level world, @Nullable AreaSelection currentSelectionFallback, boolean ignoreEntities, String message) throws Exception
     {
         Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(world, "world");
-        Objects.requireNonNull(selection, "selection");
         Objects.requireNonNull(message, "message");
 
         ObjectId parent = RvcRepository.resolveHead(repositoryDirectory);
-        SchematicaSchematic schematic = createSchematicFromSelection(world, selection, ignoreEntities);
+        SchematicaSchematic schematic = createSchematicFromLocalSelectionOrFallbackToCurrentPositionUtilsGetValidBoxes(repositoryDirectory, world, currentSelectionFallback, ignoreEntities);
         return RvcRepository.commit(repositoryDirectory, projectName, schematic, player, parent, normalizeCommitMessage(message));
+    }
+
+    public static void writeLocalSelection(Path repositoryDirectory, AreaSelection selection) throws IOException
+    {
+        Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
+        Objects.requireNonNull(selection, "selection");
+
+        JsonObject root = new JsonObject();
+        root.add(LOCAL_SELECTION_KEY, selection.toJson());
+        Files.createDirectories(repositoryDirectory);
+        Files.writeString(repositoryDirectory.resolve(LOCAL_JSON), GSON.toJson(root), StandardCharsets.UTF_8);
+    }
+
+    @Nullable
+    public static AreaSelection readLocalSelection(Path repositoryDirectory)
+    {
+        Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
+
+        Path localFile = repositoryDirectory.resolve(LOCAL_JSON);
+
+        if (Files.isRegularFile(localFile) == false)
+        {
+            return null;
+        }
+
+        JsonElement element;
+
+        try
+        {
+            element = JsonParser.parseString(Files.readString(localFile, StandardCharsets.UTF_8));
+        }
+        catch (Exception e)
+        {
+            return null;
+        }
+
+        if (element != null && element.isJsonObject())
+        {
+            JsonObject root = element.getAsJsonObject();
+
+            if (root.has(LOCAL_SELECTION_KEY) && root.get(LOCAL_SELECTION_KEY).isJsonObject())
+            {
+                return AreaSelection.fromJson(root.get(LOCAL_SELECTION_KEY).getAsJsonObject());
+            }
+        }
+
+        return null;
     }
 
     public static List<Project> listProjects(Path gameRunDirectory) throws IOException
@@ -208,9 +266,42 @@ public final class RvcProjectService
         }
     }
 
-    private static SchematicaSchematic createSchematicFromSelection(Level world, AreaSelection selection, boolean ignoreEntities)
+    private static SchematicaSchematic createSchematicFromLocalSelectionOrFallbackToCurrentPositionUtilsGetValidBoxes(Path repositoryDirectory, Level world, @Nullable AreaSelection currentSelectionFallback, boolean ignoreEntities)
     {
-        List<Box> boxes = PositionUtils.getValidBoxes(selection);
+        AreaSelection localSelection = readLocalSelection(repositoryDirectory);
+        List<Box> boxes;
+
+        if (localSelection != null)
+        {
+            boxes = getValidBoxes(localSelection);
+
+            if (boxes.isEmpty() == false)
+            {
+                return createSchematicFromSelectionBoxes(world, boxes, ignoreEntities);
+            }
+        }
+
+        boxes = fallbackToCurrentPositionUtilsGetValidBoxes(currentSelectionFallback);
+        return createSchematicFromSelectionBoxes(world, boxes, ignoreEntities);
+    }
+
+    private static List<Box> getValidBoxes(AreaSelection selection)
+    {
+        return PositionUtils.getValidBoxes(selection);
+    }
+
+    private static List<Box> fallbackToCurrentPositionUtilsGetValidBoxes(@Nullable AreaSelection currentSelectionFallback)
+    {
+        if (currentSelectionFallback == null)
+        {
+            return List.of();
+        }
+
+        return PositionUtils.getValidBoxes(currentSelectionFallback);
+    }
+
+    private static SchematicaSchematic createSchematicFromSelectionBoxes(Level world, List<Box> boxes, boolean ignoreEntities)
+    {
         Pair<BlockPos, BlockPos> corners = PositionUtils.getEnclosingAreaCorners(boxes);
 
         if (corners == null)

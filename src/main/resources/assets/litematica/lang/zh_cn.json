@@ -1117,6 +1117,7 @@
     "litematica.gui.button.change_menu.rvc_project_manager": "RVC项目管理器",
     "litematica.gui.button.rvc_project.create": "创建RVC项目",
     "litematica.gui.button.rvc_project.open": "打开",
+    "litematica.gui.button.rvc_project.update_areas": "更新选区",
     "litematica.gui.button.rvc_project.commit": "提交",
     "litematica.gui.button.rvc_project.push": "推送",
     "litematica.gui.button.rvc_project.pull": "拉取",
@@ -1141,5 +1142,6 @@
     "litematica.message.rvc_project.committed": "已创建RVC提交",
     "litematica.message.rvc_project.pushed": "RVC推送完成",
     "litematica.message.rvc_project.pulled": "RVC拉取完成：%s",
+    "litematica.message.rvc_project.update_areas_todo": "TODO",
     "modmenu.descriptionTranslation.litematica": "适用于LiteLoader、Rift、Fabric等的现代化的原理图投影Mod。"
 }

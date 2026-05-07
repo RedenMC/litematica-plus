@@ -39,6 +39,7 @@ public class GuiRvcProject extends GuiBase
 
         int x = 12;
         int y = 28;
+        x += this.createButton(x, y, ButtonType.UPDATE_AREAS);
         x += this.createButton(x, y, ButtonType.COMMIT);
         x += this.createButton(x, y, ButtonType.PUSH);
         x += this.createButton(x, y, ButtonType.PULL);
@@ -100,12 +101,12 @@ public class GuiRvcProject extends GuiBase
         }
     }
 
-    private void commitCurrentSelection()
+    private void promptCommitMessage()
     {
         GuiBase.openGui(new GuiTextInput(256, "litematica.gui.title.rvc_project.commit_message", "update schematic", this, new CommitMessageSetter(this)));
     }
 
-    private void commitCurrentSelection(String message)
+    private void commitStoredSelectionWithCurrentSelectionFallback(String message)
     {
         Minecraft minecraft = Minecraft.getInstance();
         Player player = minecraft.player;
@@ -123,18 +124,12 @@ public class GuiRvcProject extends GuiBase
             return;
         }
 
-        AreaSelection selection = DataManager.getSelectionManager().getCurrentSelection();
-
-        if (selection == null || selection.getAllSubRegionBoxes().isEmpty())
-        {
-            this.addMessage(MessageType.ERROR, "litematica.message.error.schematic_save_no_area_selected");
-            return;
-        }
+        AreaSelection selectionFallback = DataManager.getSelectionManager().getCurrentSelection();
 
         try
         {
             RvcPlayerIdentity identity = new RvcPlayerIdentity(player.getName().getString(), player.getUUID());
-            RvcProjectService.commitCurrentSelection(this.repositoryDirectory, this.projectName, identity, world, selection, false, message);
+            RvcProjectService.commitStoredSelectionWithCurrentSelectionFallback(this.repositoryDirectory, this.projectName, identity, world, selectionFallback, false, message);
             this.refreshHistory();
             this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.committed");
         }
@@ -177,8 +172,14 @@ public class GuiRvcProject extends GuiBase
         }
     }
 
+    private void updateAreas()
+    {
+        this.addMessage(MessageType.INFO, "litematica.message.rvc_project.update_areas_todo");
+    }
+
     private enum ButtonType
     {
+        UPDATE_AREAS("litematica.gui.button.rvc_project.update_areas"),
         COMMIT("litematica.gui.button.rvc_project.commit"),
         PUSH("litematica.gui.button.rvc_project.push"),
         PULL("litematica.gui.button.rvc_project.pull");
@@ -198,7 +199,8 @@ public class GuiRvcProject extends GuiBase
         {
             switch (this.type)
             {
-                case COMMIT -> this.gui.commitCurrentSelection();
+                case UPDATE_AREAS -> this.gui.updateAreas();
+                case COMMIT -> this.gui.promptCommitMessage();
                 case PUSH -> this.gui.push();
                 case PULL -> this.gui.pull();
             }
@@ -236,7 +238,7 @@ public class GuiRvcProject extends GuiBase
                 return false;
             }
 
-            this.gui.commitCurrentSelection(message);
+            this.gui.commitStoredSelectionWithCurrentSelectionFallback(message);
             return true;
         }
     }

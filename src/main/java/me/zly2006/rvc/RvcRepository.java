@@ -25,6 +25,7 @@ public final class RvcRepository
     public static final String INDEX_JSON = "index.json";
     public static final String INDEX_SCHEMATIC = "index.schematic";
     public static final String README = "README.md";
+    public static final String GITIGNORE = ".gitignore";
 
     private RvcRepository()
     {
@@ -99,6 +100,7 @@ public final class RvcRepository
                     .addFilepattern(INDEX_JSON)
                     .addFilepattern(INDEX_SCHEMATIC)
                     .addFilepattern(README)
+                    .addFilepattern(GITIGNORE)
                     .call();
 
             ObjectId commitId = createCommit(repository, player, parent, message);
@@ -132,6 +134,7 @@ public final class RvcRepository
     {
         Files.writeString(directory.resolve(INDEX_JSON), createIndexJson(name), StandardCharsets.UTF_8);
         Files.writeString(directory.resolve(README), createReadme(name), StandardCharsets.UTF_8);
+        Files.writeString(directory.resolve(GITIGNORE), "/" + RvcProjectService.LOCAL_JSON + "\n", StandardCharsets.UTF_8);
     }
 
     private static String createReadme(String name)
@@ -150,7 +153,8 @@ public final class RvcRepository
                 "## Project files\n\n" +
                 "- `index.schematic` contains the schematic data managed by RVC.\n" +
                 "- `index.json` stores RVC metadata such as the project name and repository format version.\n" +
-                "- `README.md` explains the purpose of this repository and the basic Git workflow.\n\n";
+                "- `README.md` explains the purpose of this repository and the basic Git workflow.\n" +
+                "- `local.json` stores local, uncommitted selection data and is ignored by Git.\n\n";
     }
 
     private static String createIndexJson(String name)

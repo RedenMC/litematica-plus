@@ -1117,6 +1117,7 @@
     "litematica.gui.button.change_menu.rvc_project_manager": "RVC Project Manager",
     "litematica.gui.button.rvc_project.create": "Create RVC project",
     "litematica.gui.button.rvc_project.open": "Open",
+    "litematica.gui.button.rvc_project.update_areas": "Update areas",
     "litematica.gui.button.rvc_project.commit": "Commit",
     "litematica.gui.button.rvc_project.push": "Push",
     "litematica.gui.button.rvc_project.pull": "Pull",
@@ -1141,5 +1142,6 @@
     "litematica.message.rvc_project.committed": "Created RVC commit",
     "litematica.message.rvc_project.pushed": "RVC push completed",
     "litematica.message.rvc_project.pulled": "RVC pull completed: %s",
+    "litematica.message.rvc_project.update_areas_todo": "TODO",
     "modmenu.descriptionTranslation.litematica": "A modern schematic mod for LiteLoader, Rift, Fabric etc."
 }
