@@ -23,7 +23,7 @@ Required behavior:
 - Refresh the Litematica ghost overlay to the same state.
 - Run or refresh verifier state when the client and schematic worlds are available.
 - Use the schematic's real world origin, computed from `index.json` plus local `Master Origin`, not an arbitrary repository or Master Origin path.
-- Never apply masked air from the enclosing schematic cuboid to untracked space between independent sub-regions. Game-world writes must be limited to tracked sub-region boxes.
+- Never apply fallback air from the enclosing structure cuboid to untracked space between independent sub-regions. RVC encodes that space as `minecraft:structure_void` so existing placement logic skips it.
 
 This rule is intentionally stronger than ordinary Git semantics because RVC is an in-game version control workflow. If the repository changes but the player cannot see the corresponding world/overlay state, the feature is incomplete.
 
@@ -51,7 +51,7 @@ The external PRD proposes files such as `history.json` and a `/data/` directory.
 Current RVC repository structure is intentionally simple and Git-native:
 
 - `index.json`: versioned RVC project metadata.
-- `index.schematic`: versioned schematic content saved with `SchematicaSchematic`.
+- `index.nbt`: versioned vanilla structure content saved with Minecraft `StructureTemplate`.
 - `README.md`: generated project description.
 - `.gitignore`: Git ignore rules for local-only files.
 - `local.json`: local-only state, ignored by Git.
@@ -90,20 +90,20 @@ Current behavior:
 - The project captures the current Litematica `AreaSelection`.
 - Commit code reads a saved local selection first.
 - It falls back to the current in-game selection only when local selection data is unavailable.
-- All valid boxes are collapsed into one enclosing cuboid before saving `index.schematic`.
+- All valid boxes are projected into one enclosing vanilla structure before saving `index.nbt`.
 
 Problems:
 
 - Sub-region metadata is not stored in versioned `index.json`.
 - Per-sub-region identity and relative positions are not preserved as first-class project metadata.
-- Collapsing all boxes into one enclosing cuboid can include blocks between independent sub-regions.
+- Collapsing all boxes into one enclosing cuboid can include blocks between independent sub-regions if the untracked space is not explicitly represented.
 - The current model cannot accurately support future branch, diff, merge, or update-area workflows.
 
 Required direction:
 
 - Store sub-region names, sizes, and relative positions in `index.json`.
 - Keep sub-region definitions versioned with the project.
-- Avoid treating multiple independent sub-regions as one enclosing cuboid in the long-term design.
+- Keep independent sub-regions explicit in `index.json`; when `index.nbt` needs one enclosing structure volume, untracked space must be encoded as `minecraft:structure_void`.
 - Keep fallback code explicit and visibly named when fallback to current selection is necessary.
 
 Implementation notes:
@@ -112,7 +112,7 @@ Implementation notes:
 - `local.json` stores the clone-local Master Origin and remains ignored by Git.
 - Commit code restores the tracked selection from `index.json` plus `local.json`.
 - Fallback to the current in-game selection remains explicit in method names.
-- `index.schematic` is still a single schematic file for compatibility, but blocks outside the tracked sub-regions are masked to air after `SchematicaSchematic.createFromWorld(...)`, so independent sub-regions no longer commit real world blocks from the space between them.
+- `index.nbt` is a single vanilla structure file. During export, RVC copies tracked blocks into a temporary schematic world, fills untracked gaps with `minecraft:structure_void`, and then delegates serialization to `StructureTemplate#fillFromWorld` / `StructureTemplate#save`. This prevents independent sub-regions from committing real world blocks from the space between them.
 
 ### 5. Repeated Directory Structure Warning
 
@@ -134,7 +134,7 @@ The PRD describes a useful post-commit workflow: after a commit, the committed s
 
 Current behavior:
 
-- A commit writes `index.schematic` and creates a Git commit.
+- A commit writes `index.nbt` and creates a Git commit.
 - The RVC project GUI refreshes the commit history.
 - No ghost overlay is loaded.
 - No verifier state is enabled.
@@ -149,7 +149,7 @@ Required direction:
 
 Implementation notes:
 
-- After an RVC commit from the project GUI, the committed `index.schematic` is loaded through Litematica's schematic holder.
+- After an RVC commit from the project GUI, the committed `index.nbt` is loaded through Litematica's vanilla structure loader and schematic holder.
 - A normal Litematica schematic placement is created at the schematic's real world origin, computed from versioned sub-regions plus the clone-local Master Origin.
 - The placement uses existing Litematica rendering controls, so the ghost overlay follows the same rendering pipeline as other placements.
 - The schematic verifier is started when a client world and schematic world are available.
@@ -209,6 +209,6 @@ The following areas have been fixed or deliberately bounded:
 
 - Shared sub-region definitions are versioned in `index.json`.
 - Master Origin is kept in local-only `local.json`.
-- `index.schematic` masks blocks outside tracked sub-regions instead of committing real blocks from one enclosing cuboid.
+- `index.nbt` stores vanilla structure data. Untracked gaps inside the enclosing structure volume are written as `minecraft:structure_void`, not as real world blocks and not as air to be pasted over unrelated world space.
 - Post-commit, pull, and checkout all refresh the visible in-game state through world restoration and/or ghost overlay plus verifier.
 - History rows include `Inspect` and real `Checkout` actions.

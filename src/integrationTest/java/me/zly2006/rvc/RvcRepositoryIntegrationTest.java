@@ -1,8 +1,6 @@
 package me.zly2006.rvc;
 
 import java.nio.charset.StandardCharsets;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -13,10 +11,18 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderGetter;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.DetectedVersion;
 import net.minecraft.SharedConstants;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.IntTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.server.Bootstrap;
-import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
@@ -26,25 +32,21 @@ import org.eclipse.jgit.revwalk.RevTree;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.treewalk.TreeWalk;
-import fi.dy.masa.litematica.schematic.SchematicaSchematic;
-import fi.dy.masa.litematica.schematic.container.LitematicaBlockStateContainer;
 import fi.dy.masa.litematica.selection.AreaSelection;
-import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.malilib.util.data.json.JsonUtils;
-import fi.dy.masa.malilib.util.nbt.NbtUtils;
 
 public class RvcRepositoryIntegrationTest
 {
     public static void main(String[] args) throws Exception
     {
         IntegrationTestSupport.run("init writes RVC files and creates the first Git commit", RvcRepositoryIntegrationTest::initWritesRvcFilesAndCreatesTheFirstGitCommit);
-        IntegrationTestSupport.run("init commits an index schematic saved by SchematicaSchematic", RvcRepositoryIntegrationTest::initCommitsAnIndexSchematicSavedBySchematicaSchematic);
+        IntegrationTestSupport.run("init commits an index structure saved as vanilla nbt", RvcRepositoryIntegrationTest::initCommitsAnIndexStructureSavedAsVanillaNbt);
         IntegrationTestSupport.run("commit uses the supplied parent and history lists newest commits first", RvcRepositoryIntegrationTest::commitUsesSuppliedParentAndHistoryListsNewestFirst);
         IntegrationTestSupport.run("project service lists valid repositories and pushes to a remote", RvcRepositoryIntegrationTest::projectServiceListsValidRepositoriesAndPushesToRemote);
         IntegrationTestSupport.run("local selection is stored in local.json and ignored by Git", RvcRepositoryIntegrationTest::localSelectionIsStoredInLocalJsonAndIgnoredByGit);
         IntegrationTestSupport.run("sub-regions are versioned in index json and master origin is local only", RvcRepositoryIntegrationTest::subRegionsAreVersionedInIndexJsonAndMasterOriginIsLocalOnly);
-        IntegrationTestSupport.run("schematica export masks blocks outside tracked sub-regions", RvcRepositoryIntegrationTest::schematicaExportMasksBlocksOutsideTrackedSubRegions);
         IntegrationTestSupport.run("checkout updates the working tree while preserving visible history", RvcRepositoryIntegrationTest::checkoutUpdatesWorkingTreeWhilePreservingVisibleHistory);
+        IntegrationTestSupport.run("commit history remains scoped to the branch after checkout", RvcRepositoryIntegrationTest::commitHistoryRemainsScopedToBranchAfterCheckout);
         IntegrationTestSupport.run("commit after checkout uses checked out commit as parent", RvcRepositoryIntegrationTest::commitAfterCheckoutUsesCheckedOutCommitAsParent);
     }
 
@@ -53,8 +55,8 @@ public class RvcRepositoryIntegrationTest
         Path repoDir = Files.createTempDirectory("rvc-commit-parent-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderThree", UUID.fromString("123e4567-e89b-12d3-a456-426614174004"));
 
-        RevCommit first = RvcRepository.commit(repoDir, "Parent Driven", createTinySchematicaSchematic(), player, null, "init");
-        RevCommit second = RvcRepository.commit(repoDir, "Parent Driven", createTinySchematicaSchematic(), player, first.getId(), "update from world");
+        RevCommit first = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, null, "init");
+        RevCommit second = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, first.getId(), "update from world");
 
         try (Git git = Git.open(repoDir.toFile()))
         {
@@ -84,7 +86,7 @@ public class RvcRepositoryIntegrationTest
         Path invalidRepo = reposDir.resolve("Not Git");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderFour", UUID.fromString("123e4567-e89b-12d3-a456-426614174005"));
 
-        RvcRepository.commit(validRepo, "Valid Project", createTinySchematicaSchematic(), player, null, "init");
+        RvcRepository.commit(validRepo, "Valid Project", createTinyStructureTemplate(), player, null, "init");
         Files.createDirectories(invalidRepo);
 
         List<RvcProjectService.Project> projects = RvcProjectService.listProjects(runDir);
@@ -113,13 +115,13 @@ public class RvcRepositoryIntegrationTest
         RvcRepository.init(
                 repoDir,
                 "Starter Build",
-                "schematic bytes".getBytes(StandardCharsets.UTF_8),
+                "structure bytes".getBytes(StandardCharsets.UTF_8),
                 new RvcPlayerIdentity("BuilderOne", playerUuid)
         );
 
         IntegrationTestSupport.assertFileContains(repoDir.resolve("index.json"), "\"rvc_version\": 1");
         IntegrationTestSupport.assertFileContains(repoDir.resolve("index.json"), "\"name\": \"Starter Build\"");
-        IntegrationTestSupport.assertFileContains(repoDir.resolve("index.schematic"), "schematic bytes");
+        IntegrationTestSupport.assertFileContains(repoDir.resolve("index.nbt"), "structure bytes");
         IntegrationTestSupport.assertFileContains(repoDir.resolve("README.md"), "# Starter Build");
 
         try (Git git = Git.open(repoDir.toFile()))
@@ -144,7 +146,7 @@ public class RvcRepositoryIntegrationTest
                 IntegrationTestSupport.assertTrue(rawCommit.contains("\nx-created-by rvc\n"), "commit should contain x-created-by metadata");
 
                 Set<String> files = listTreeFiles(repository, commit.getTree());
-                IntegrationTestSupport.assertEquals(Set.of(".gitignore", "README.md", "index.json", "index.schematic"), files, "committed files");
+                IntegrationTestSupport.assertEquals(Set.of(".gitignore", "README.md", "index.json", "index.nbt"), files, "committed files");
                 IntegrationTestSupport.assertTrue(git.status().call().isClean(), "working tree should be clean after init commit");
             }
         }
@@ -156,7 +158,7 @@ public class RvcRepositoryIntegrationTest
         AreaSelection selection = createAreaSelectionFromJson("Stored Selection");
 
         RvcProjectService.writeLocalSelection(repoDir, selection);
-        RvcRepository.commit(repoDir, "Local Selection", "schematic bytes".getBytes(StandardCharsets.UTF_8), new RvcPlayerIdentity("BuilderFive", UUID.fromString("123e4567-e89b-12d3-a456-426614174006")), null, "init");
+        RvcRepository.commit(repoDir, "Local Selection", "structure bytes".getBytes(StandardCharsets.UTF_8), new RvcPlayerIdentity("BuilderFive", UUID.fromString("123e4567-e89b-12d3-a456-426614174006")), null, "init");
 
         IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcProjectService.LOCAL_JSON), "\"local_selection\"");
         IntegrationTestSupport.assertFileContains(repoDir.resolve(".gitignore"), "/local.json");
@@ -217,48 +219,52 @@ public class RvcRepositoryIntegrationTest
         return AreaSelection.fromJson(selection);
     }
 
-    private static void schematicaExportMasksBlocksOutsideTrackedSubRegions() throws Exception
-    {
-        SchematicaSchematic schematic = createLineSchematicaSchematic(3);
-        Box first = createBox("first", new BlockPos(10, 64, 10), new BlockPos(10, 64, 10));
-        Box third = createBox("third", new BlockPos(12, 64, 10), new BlockPos(12, 64, 10));
-
-        schematic.maskOutsideWorldBoxes(new BlockPos(10, 64, 10), List.of(first, third));
-
-        net.minecraft.nbt.CompoundTag nbt = schematic.writeToNBT();
-        byte[] blocks = nbt.getByteArray("Blocks").orElse(new byte[0]);
-
-        IntegrationTestSupport.assertEquals((byte) 1, blocks[0], "first tracked block should remain stone");
-        IntegrationTestSupport.assertEquals((byte) 0, blocks[1], "middle untracked block should be masked to air");
-        IntegrationTestSupport.assertEquals((byte) 1, blocks[2], "third tracked block should remain stone");
-    }
-
     private static void checkoutUpdatesWorkingTreeWhilePreservingVisibleHistory() throws Exception
     {
         Path repoDir = Files.createTempDirectory("rvc-checkout-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderSix", UUID.fromString("123e4567-e89b-12d3-a456-426614174007"));
-        RevCommit first = RvcRepository.commit(repoDir, "Checkout Project", "first schematic".getBytes(StandardCharsets.UTF_8), player, null, "first");
-        RevCommit second = RvcRepository.commit(repoDir, "Checkout Project", "second schematic".getBytes(StandardCharsets.UTF_8), player, first.getId(), "second");
+        RevCommit first = RvcRepository.commit(repoDir, "Checkout Project", "first structure".getBytes(StandardCharsets.UTF_8), player, null, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Checkout Project", "second structure".getBytes(StandardCharsets.UTF_8), player, first.getId(), "second");
 
+        List<RvcProjectService.CommitInfo> branchHistoryBeforeCheckout = RvcProjectService.listCommits(repoDir);
         RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
 
-        IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcRepository.INDEX_SCHEMATIC), "first schematic");
+        IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcRepository.INDEX_STRUCTURE), "first structure");
         IntegrationTestSupport.assertEquals(first.getId(), RvcRepository.resolveHead(repoDir), "checkout should move HEAD to the selected commit");
 
         List<RvcProjectService.CommitInfo> history = RvcProjectService.listCommits(repoDir);
+        IntegrationTestSupport.assertEquals(branchHistoryBeforeCheckout.stream().map(RvcProjectService.CommitInfo::id).toList(), history.stream().map(RvcProjectService.CommitInfo::id).toList(), "checkout should not reorder or replace branch commit history");
         IntegrationTestSupport.assertTrue(history.stream().anyMatch(commit -> commit.id().equals(first.getName())), "history should still show checked-out commit");
         IntegrationTestSupport.assertTrue(history.stream().anyMatch(commit -> commit.id().equals(second.getName())), "history should still show branch commits after detached checkout");
+    }
+
+    private static void commitHistoryRemainsScopedToBranchAfterCheckout() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-checkout-history-");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderEight", UUID.fromString("123e4567-e89b-12d3-a456-426614174009"));
+        RevCommit first = RvcRepository.commit(repoDir, "Branch Scoped History", "first structure".getBytes(StandardCharsets.UTF_8), player, null, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Branch Scoped History", "second structure".getBytes(StandardCharsets.UTF_8), player, first.getId(), "second");
+
+        List<String> branchHistory = RvcProjectService.listCommits(repoDir).stream().map(RvcProjectService.CommitInfo::id).toList();
+
+        RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
+        RevCommit detached = RvcRepository.commit(repoDir, "Branch Scoped History", "detached structure".getBytes(StandardCharsets.UTF_8), player, RvcRepository.resolveHead(repoDir), "detached experiment");
+
+        List<String> historyAfterDetachedCommit = RvcProjectService.listCommits(repoDir).stream().map(RvcProjectService.CommitInfo::id).toList();
+        IntegrationTestSupport.assertEquals(branchHistory, historyAfterDetachedCommit, "history should stay scoped to the branch selected before checkout");
+        IntegrationTestSupport.assertTrue(historyAfterDetachedCommit.contains(second.getName()), "branch tip should remain visible");
+        IntegrationTestSupport.assertTrue(historyAfterDetachedCommit.contains(detached.getName()) == false, "detached checkout commits must not appear in branch history");
     }
 
     private static void commitAfterCheckoutUsesCheckedOutCommitAsParent() throws Exception
     {
         Path repoDir = Files.createTempDirectory("rvc-checkout-commit-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderSeven", UUID.fromString("123e4567-e89b-12d3-a456-426614174008"));
-        RevCommit first = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinySchematicaSchematic(), player, null, "first");
-        RvcRepository.commit(repoDir, "Checkout Commit Project", createTinySchematicaSchematic(), player, first.getId(), "second");
+        RevCommit first = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, null, "first");
+        RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, first.getId(), "second");
 
         RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
-        RevCommit afterCheckout = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinySchematicaSchematic(), player, RvcRepository.resolveHead(repoDir), "after checkout");
+        RevCommit afterCheckout = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, RvcRepository.resolveHead(repoDir), "after checkout");
 
         try (Git git = Git.open(repoDir.toFile()))
         {
@@ -271,15 +277,6 @@ public class RvcRepositoryIntegrationTest
                 IntegrationTestSupport.assertEquals(first.getId(), parsed.getParent(0).getId(), "new detached commit should parent the checked-out commit");
             }
         }
-    }
-
-    private static Box createBox(String name, BlockPos pos1, BlockPos pos2)
-    {
-        Box box = new Box();
-        box.setName(name);
-        box.setPos1(pos1);
-        box.setPos2(pos2);
-        return box;
     }
 
     private static Set<String> listTreeFiles(Repository repository, RevTree tree) throws Exception
@@ -299,63 +296,69 @@ public class RvcRepositoryIntegrationTest
         }
     }
 
-    private static void initCommitsAnIndexSchematicSavedBySchematicaSchematic() throws Exception
+    private static void initCommitsAnIndexStructureSavedAsVanillaNbt() throws Exception
     {
-        Path repoDir = Files.createTempDirectory("rvc-schematic-init-");
-        SchematicaSchematic schematic = createTinySchematicaSchematic();
+        Path repoDir = Files.createTempDirectory("rvc-structure-init-");
+        StructureTemplate structure = createTinyStructureTemplate();
 
         RvcRepository.init(
                 repoDir,
-                "Schematica Backed",
-                schematic,
+                "Vanilla Structure Backed",
+                structure,
                 new RvcPlayerIdentity("BuilderTwo", UUID.fromString("123e4567-e89b-12d3-a456-426614174003"))
         );
 
-        Path schematicFile = repoDir.resolve("index.schematic");
-        IntegrationTestSupport.assertTrue(Files.size(schematicFile) > 0, "index.schematic should be a real saved schematic file");
-        net.minecraft.nbt.CompoundTag nbt = NbtUtils.readNbtFromFile(schematicFile);
-        IntegrationTestSupport.assertEquals((short) 1, nbt.getShortOr("Width", (short) 0), "saved schematic width");
-        IntegrationTestSupport.assertEquals((short) 1, nbt.getShortOr("Height", (short) 0), "saved schematic height");
-        IntegrationTestSupport.assertEquals((short) 1, nbt.getShortOr("Length", (short) 0), "saved schematic length");
-        IntegrationTestSupport.assertTrue(nbt.contains("Blocks"), "saved schematic should contain block ids");
-        IntegrationTestSupport.assertTrue(nbt.contains("Data"), "saved schematic should contain block metadata");
+        Path structureFile = repoDir.resolve("index.nbt");
+        IntegrationTestSupport.assertTrue(Files.size(structureFile) > 0, "index.nbt should be a real saved vanilla structure file");
+        CompoundTag nbt = NbtIo.readCompressed(structureFile, NbtAccounter.unlimitedHeap());
+        ListTag size = nbt.getListOrEmpty("size");
+        IntegrationTestSupport.assertEquals(1, size.getIntOr(0, 0), "saved structure width");
+        IntegrationTestSupport.assertEquals(1, size.getIntOr(1, 0), "saved structure height");
+        IntegrationTestSupport.assertEquals(1, size.getIntOr(2, 0), "saved structure length");
+        IntegrationTestSupport.assertTrue(nbt.contains("palette"), "saved structure should contain a palette");
+        IntegrationTestSupport.assertTrue(nbt.contains("blocks"), "saved structure should contain block entries");
 
         try (Git git = Git.open(repoDir.toFile()))
         {
             Repository repository = git.getRepository();
             ObjectId headId = repository.resolve(Constants.HEAD);
-            IntegrationTestSupport.assertNotNull(headId, "schematica-backed repo should have HEAD");
+            IntegrationTestSupport.assertNotNull(headId, "vanilla-structure-backed repo should have HEAD");
         }
     }
 
-    private static SchematicaSchematic createTinySchematicaSchematic() throws Exception
-    {
-        return createLineSchematicaSchematic(1);
-    }
-
-    private static SchematicaSchematic createLineSchematicaSchematic(int width) throws Exception
+    private static StructureTemplate createTinyStructureTemplate()
     {
         SharedConstants.setVersion(DetectedVersion.BUILT_IN);
         Bootstrap.bootStrap();
 
-        Constructor<SchematicaSchematic> constructor = SchematicaSchematic.class.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        SchematicaSchematic schematic = constructor.newInstance();
-        LitematicaBlockStateContainer container = new LitematicaBlockStateContainer(width, 1, 1);
+        CompoundTag root = new CompoundTag();
+        ListTag size = new ListTag();
+        size.add(IntTag.valueOf(1));
+        size.add(IntTag.valueOf(1));
+        size.add(IntTag.valueOf(1));
+        root.put("size", size);
 
-        for (int x = 0; x < width; x++)
-        {
-            container.set(x, 0, 0, Blocks.STONE.defaultBlockState());
-        }
+        ListTag palette = new ListTag();
+        CompoundTag stone = new CompoundTag();
+        stone.putString("Name", "minecraft:stone");
+        palette.add(stone);
+        root.put("palette", palette);
 
-        Field blocksField = SchematicaSchematic.class.getDeclaredField("blocks");
-        blocksField.setAccessible(true);
-        blocksField.set(schematic, container);
+        ListTag blocks = new ListTag();
+        CompoundTag block = new CompoundTag();
+        ListTag pos = new ListTag();
+        pos.add(IntTag.valueOf(0));
+        pos.add(IntTag.valueOf(0));
+        pos.add(IntTag.valueOf(0));
+        block.put("pos", pos);
+        block.putInt("state", 0);
+        blocks.add(block);
+        root.put("blocks", blocks);
+        root.put("entities", new ListTag());
 
-        Field sizeField = SchematicaSchematic.class.getDeclaredField("size");
-        sizeField.setAccessible(true);
-        sizeField.set(schematic, new BlockPos(width, 1, 1));
-
-        return schematic;
+        StructureTemplate template = new StructureTemplate();
+        HolderGetter<Block> lookup = BuiltInRegistries.BLOCK;
+        template.load(lookup, root);
+        return template;
     }
 }

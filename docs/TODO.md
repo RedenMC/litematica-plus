@@ -22,7 +22,7 @@ Required behavior:
 - Show a confirmation/preview of changed sub-regions.
 - Update versioned `index.json` sub-region definitions.
 - Update local-only `local.json` Master Origin if the user explicitly requests it.
-- Recommit the updated area metadata and schematic content.
+- Recommit the updated area metadata and structure content.
 - Refresh the in-game overlay/verifier after the update.
 
 Relevant files:
@@ -52,7 +52,7 @@ Relevant files:
 
 - `src/main/java/me/zly2006/rvc/GuiRvcProject.java`
 - `src/main/java/me/zly2006/rvc/RvcProjectService.java`
-- `src/main/java/fi/dy/masa/litematica/schematic/SchematicaSchematic.java`
+- `src/main/java/me/zly2006/rvc/RvcStructure.java`
 
 ### Handle Git Dirty State, Merge Conflicts, And Failed Pulls
 
@@ -114,7 +114,7 @@ Required behavior:
 
 Relevant file:
 
-- `src/main/java/fi/dy/masa/litematica/schematic/SchematicaSchematic.java`
+- `src/main/java/me/zly2006/rvc/RvcProjectService.java`
 
 ## P1 - User Workflows
 
@@ -128,7 +128,7 @@ Current state:
 Required behavior:
 
 - Show commit id, parent ids, author, time, message, and RVC metadata.
-- Show changed files and whether `index.json` or `index.schematic` changed.
+- Show changed files and whether `index.json` or `index.nbt` changed.
 - Show sub-region metadata at that commit.
 - Provide entry points for diff and checkout preview.
 
@@ -248,11 +248,11 @@ Relevant file:
 
 - `src/main/java/me/zly2006/rvc/RvcProjectService.java`
 
-### Decide How To Store Large Binary Schematic Data
+### Decide How To Store Large Binary Structure Data
 
 Current state:
 
-- `index.schematic` is committed directly into Git.
+- `index.nbt` is committed directly into Git.
 
 Risk:
 
@@ -309,7 +309,7 @@ Relevant directory:
 
 Current state:
 
-- Integration tests cover Git commits, metadata, checkout working tree behavior, and schematic masking.
+- Integration tests cover Git commits, metadata, checkout working tree behavior, and vanilla structure serialization.
 - They do not verify real in-game block restoration because there is no dedicated fake/client world test harness yet.
 
 Required behavior:

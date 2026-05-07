@@ -1,18 +1,31 @@
-# RVC git based litematica format
+# RVC git based structure format
 
-RVC 是把litematica接入git的重大尝试。
+RVC 是把 Minecraft 结构版本接入 Git 的重大尝试。
 
 所有新的类必须写在me.zly2006.rvc包下。
 
-一个RVC schematic是一个git repo，它可以在GitHub上被同步。作为MVP，首先要实现commit。
+一个 RVC project 是一个 Git repo，它可以在 GitHub 上被同步。作为 MVP，首先要实现 commit。
 
 ## 目录结构
 
-- index.json （元数据）
-- index.schematic (使用SchematicaSchematic保存的主内容)
+- index.json （RVC 元数据和 sub-region 定义）
+- index.nbt （使用原版 vanilla structure NBT 保存的主内容）
 - README.md （自动生成）
+- local.json （本地 workspace 状态，必须写入 .gitignore）
 
 项目使用jgit操作git。
+
+## structure 存储
+
+RVC 主内容使用原版 `StructureTemplate` 的 `.nbt` 格式，而不是旧的 Schematica `.schematic` 格式。
+
+导出时，RVC 负责把多个 tracked sub-region 投影到一个临时 schematic world：
+
+- tracked sub-region 内的方块从真实世界复制。
+- tracked sub-region 外、但位于 enclosing cuboid 内的位置写成 `minecraft:structure_void`。
+- 然后调用 `StructureTemplate#fillFromWorld` 和 `StructureTemplate#save` 写出 `index.nbt`。
+
+恢复时，RVC 不手写 vanilla structure 的 palette、blocks 或 entity NBT 解析。`index.nbt` 通过 Litematica 已有的 vanilla structure loader 读取，并通过已有的 placement/paste 逻辑写回游戏内。`structure_void` 用于保证独立 sub-region 之间的空隙不会被 checkout/pull 修改。
 
 ## git commit 元数据
 

@@ -33,12 +33,11 @@ import org.eclipse.jgit.transport.PushResult;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.data.SchematicHolder;
 import fi.dy.masa.litematica.schematic.LitematicaSchematic;
-import fi.dy.masa.litematica.schematic.SchematicaSchematic;
 import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
 import fi.dy.masa.litematica.schematic.verifier.SchematicVerifier;
 import fi.dy.masa.litematica.selection.AreaSelection;
@@ -56,6 +55,8 @@ public final class RvcProjectService
     public static final String MASTER_ORIGIN_KEY = "master_origin";
     public static final String DEFAULT_REMOTE_URL = "git@github.com:zly2006/rvc-v2-test.git";
 
+    private static final String GIT_CONFIG_SECTION = "rvc";
+    private static final String GIT_CONFIG_HISTORY_BRANCH_KEY = "historyBranch";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final DateTimeFormatter COMMIT_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
@@ -81,8 +82,8 @@ public final class RvcProjectService
         Files.createDirectories(repositoryDirectory);
         writeProjectMetadataWithSubRegions(repositoryDirectory, displayName, selection);
 
-        SchematicaSchematic schematic = createSchematicFromSelectionBoxes(world, getValidBoxes(selection), ignoreEntities);
-        RevCommit commit = RvcRepository.commit(repositoryDirectory, displayName, schematic, player, null, "init");
+        StructureTemplate structure = createStructureFromSelectionBoxes(world, getValidBoxes(selection), ignoreEntities);
+        RevCommit commit = RvcRepository.commit(repositoryDirectory, displayName, structure, player, null, "init");
 
         return new Result(repositoryDirectory, commit.getName());
     }
@@ -95,8 +96,8 @@ public final class RvcProjectService
         Objects.requireNonNull(message, "message");
 
         ObjectId parent = RvcRepository.resolveHead(repositoryDirectory);
-        SchematicaSchematic schematic = createSchematicFromIndexSubRegionsOrFallbackToCurrentPositionUtilsGetValidBoxes(repositoryDirectory, world, currentSelectionFallback, ignoreEntities);
-        return RvcRepository.commit(repositoryDirectory, projectName, schematic, player, parent, normalizeCommitMessage(message));
+        StructureTemplate structure = createStructureFromIndexSubRegionsOrFallbackToCurrentPositionUtilsGetValidBoxes(repositoryDirectory, world, currentSelectionFallback, ignoreEntities);
+        return RvcRepository.commit(repositoryDirectory, projectName, structure, player, parent, normalizeCommitMessage(message));
     }
 
     public static void writeProjectMetadataWithSubRegions(Path repositoryDirectory, String projectName, AreaSelection selection) throws IOException
@@ -288,7 +289,16 @@ public final class RvcProjectService
 
         try (Git git = Git.open(repositoryDirectory.toFile()))
         {
-            for (RevCommit commit : git.log().all().call())
+            Repository repository = git.getRepository();
+            String historyBranch = historyBranchRef(repository);
+            ObjectId historyStart = repository.resolve(historyBranch);
+
+            if (historyStart == null)
+            {
+                return List.of();
+            }
+
+            for (RevCommit commit : git.log().add(historyStart).call())
             {
                 commits.add(new CommitInfo(
                         commit.getName(),
@@ -315,6 +325,7 @@ public final class RvcProjectService
 
         try (Git git = Git.open(repositoryDirectory.toFile()))
         {
+            rememberCurrentBranchForHistory(git.getRepository());
             git.checkout().setName(commitId.trim()).call();
         }
     }
@@ -325,22 +336,21 @@ public final class RvcProjectService
         Objects.requireNonNull(projectName, "projectName");
         Objects.requireNonNull(world, "world");
 
-        List<Box> boxes = readTrackedBoxes(repositoryDirectory);
+        int trackedBoxCount = readTrackedBoxes(repositoryDirectory).size();
         BlockPos schematicWorldOrigin = resolveSchematicWorldOrigin(repositoryDirectory);
-        Path schematicFile = repositoryDirectory.resolve(RvcRepository.INDEX_SCHEMATIC);
-        SchematicaSchematic schematic = SchematicaSchematic.createFromFile(schematicFile);
+        Path structureFile = repositoryDirectory.resolve(RvcRepository.INDEX_STRUCTURE);
+        LitematicaSchematic schematic = reloadLitematicaSchematic(structureFile);
 
         if (schematic == null)
         {
-            throw new IOException("Failed to load RVC schematic: " + schematicFile);
+            throw new IOException("Failed to load RVC structure: " + structureFile);
         }
 
-        StructurePlaceSettings placement = new StructurePlaceSettings();
-        placement.setIgnoreEntities(false);
-        schematic.placeSchematicToWorldBoxes(world, schematicWorldOrigin, placement, 0x12, boxes);
+        SchematicPlacement placement = SchematicPlacement.createFor(schematic, schematicWorldOrigin, "RVC: " + projectName, true, true);
+        schematic.placeToWorld(world, placement, false);
 
-        TrackingOverlay overlay = loadTrackingOverlay(repositoryDirectory, projectName, clientLevel, completionListener);
-        return new GameRestore(schematicWorldOrigin, boxes.size(), overlay);
+        TrackingOverlay overlay = addTrackingOverlay(placement, clientLevel, completionListener);
+        return new GameRestore(schematicWorldOrigin, trackedBoxCount, overlay);
     }
 
     public static GameRestore checkoutCommitToGame(Path repositoryDirectory, String projectName, String commitId, Level world, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws GitAPIException, IOException
@@ -412,17 +422,21 @@ public final class RvcProjectService
         Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
         Objects.requireNonNull(projectName, "projectName");
 
-        Path schematicFile = repositoryDirectory.resolve(RvcRepository.INDEX_SCHEMATIC);
-        LitematicaSchematic schematic = reloadLitematicaSchematic(schematicFile);
+        Path structureFile = repositoryDirectory.resolve(RvcRepository.INDEX_STRUCTURE);
+        LitematicaSchematic schematic = reloadLitematicaSchematic(structureFile);
 
         if (schematic == null)
         {
-            throw new IOException("Failed to load RVC schematic: " + schematicFile);
+            throw new IOException("Failed to load RVC structure: " + structureFile);
         }
 
         BlockPos origin = resolveSchematicWorldOrigin(repositoryDirectory);
-
         SchematicPlacement placement = SchematicPlacement.createFor(schematic, origin, "RVC: " + projectName, true, true);
+        return addTrackingOverlay(placement, clientLevel, completionListener);
+    }
+
+    private static TrackingOverlay addTrackingOverlay(SchematicPlacement placement, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener)
+    {
         DataManager.getSchematicPlacementManager().addSchematicPlacement(placement, false);
 
         SchematicVerifier verifier = placement.getSchematicVerifier();
@@ -498,22 +512,22 @@ public final class RvcProjectService
         return boxes;
     }
 
-    private static LitematicaSchematic reloadLitematicaSchematic(Path schematicFile)
+    private static LitematicaSchematic reloadLitematicaSchematic(Path structureFile)
     {
         SchematicHolder holder = SchematicHolder.getInstance();
 
         for (LitematicaSchematic schematic : new ArrayList<>(holder.getAllSchematics()))
         {
-            if (schematicFile.equals(schematic.getFile()))
+            if (structureFile.equals(schematic.getFile()))
             {
                 holder.removeSchematic(schematic);
             }
         }
 
-        return holder.getOrLoad(schematicFile);
+        return holder.getOrLoad(structureFile);
     }
 
-    private static SchematicaSchematic createSchematicFromIndexSubRegionsOrFallbackToCurrentPositionUtilsGetValidBoxes(Path repositoryDirectory, Level world, @Nullable AreaSelection currentSelectionFallback, boolean ignoreEntities)
+    private static StructureTemplate createStructureFromIndexSubRegionsOrFallbackToCurrentPositionUtilsGetValidBoxes(Path repositoryDirectory, Level world, @Nullable AreaSelection currentSelectionFallback, boolean ignoreEntities)
     {
         AreaSelection localSelection = readProjectAreaSelection(repositoryDirectory);
         List<Box> boxes;
@@ -524,12 +538,12 @@ public final class RvcProjectService
 
             if (boxes.isEmpty() == false)
             {
-                return createSchematicFromSelectionBoxes(world, boxes, ignoreEntities);
+                return createStructureFromSelectionBoxes(world, boxes, ignoreEntities);
             }
         }
 
         boxes = fallbackToCurrentPositionUtilsGetValidBoxes(currentSelectionFallback);
-        return createSchematicFromSelectionBoxes(world, boxes, ignoreEntities);
+        return createStructureFromSelectionBoxes(world, boxes, ignoreEntities);
     }
 
     private static List<Box> getValidBoxes(AreaSelection selection)
@@ -593,20 +607,9 @@ public final class RvcProjectService
         return new BlockPos(arr.get(0).getAsInt(), arr.get(1).getAsInt(), arr.get(2).getAsInt());
     }
 
-    private static SchematicaSchematic createSchematicFromSelectionBoxes(Level world, List<Box> boxes, boolean ignoreEntities)
+    private static StructureTemplate createStructureFromSelectionBoxes(Level world, List<Box> boxes, boolean ignoreEntities)
     {
-        Pair<BlockPos, BlockPos> corners = PositionUtils.getEnclosingAreaCorners(boxes);
-
-        if (corners == null)
-        {
-            throw new IllegalArgumentException("RVC project requires a non-empty area selection");
-        }
-
-        BlockPos min = corners.getLeft();
-        BlockPos size = corners.getRight().subtract(min).offset(1, 1, 1);
-        SchematicaSchematic schematic = SchematicaSchematic.createFromWorld(world, min, size, ignoreEntities);
-        schematic.maskOutsideWorldBoxes(min, boxes);
-        return schematic;
+        return RvcStructure.createFromWorld(world, boxes, ignoreEntities);
     }
 
     private static String normalizeDisplayName(String repositoryName)
@@ -659,6 +662,47 @@ public final class RvcProjectService
         }
 
         return fullBranch;
+    }
+
+    private static String historyBranchRef(Repository repository) throws IOException
+    {
+        String fullBranch = repository.getFullBranch();
+
+        if (fullBranch != null && fullBranch.startsWith(Constants.R_HEADS))
+        {
+            rememberHistoryBranch(repository, fullBranch);
+            return fullBranch;
+        }
+
+        String configuredBranch = repository.getConfig().getString(GIT_CONFIG_SECTION, null, GIT_CONFIG_HISTORY_BRANCH_KEY);
+
+        if (configuredBranch != null && configuredBranch.isBlank() == false)
+        {
+            return configuredBranch;
+        }
+
+        return Constants.HEAD;
+    }
+
+    private static void rememberCurrentBranchForHistory(Repository repository) throws IOException
+    {
+        String fullBranch = repository.getFullBranch();
+
+        if (fullBranch != null && fullBranch.startsWith(Constants.R_HEADS))
+        {
+            rememberHistoryBranch(repository, fullBranch);
+        }
+    }
+
+    private static void rememberHistoryBranch(Repository repository, String fullBranch) throws IOException
+    {
+        StoredConfig config = repository.getConfig();
+
+        if (fullBranch.equals(config.getString(GIT_CONFIG_SECTION, null, GIT_CONFIG_HISTORY_BRANCH_KEY)) == false)
+        {
+            config.setString(GIT_CONFIG_SECTION, null, GIT_CONFIG_HISTORY_BRANCH_KEY, fullBranch);
+            config.save();
+        }
     }
 
     public record Project(String name, Path directory)

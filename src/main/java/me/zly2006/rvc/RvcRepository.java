@@ -17,13 +17,13 @@ import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
-import fi.dy.masa.litematica.schematic.SchematicaSchematic;
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 public final class RvcRepository
 {
     public static final int RVC_VERSION = 1;
     public static final String INDEX_JSON = "index.json";
-    public static final String INDEX_SCHEMATIC = "index.schematic";
+    public static final String INDEX_STRUCTURE = "index.nbt";
     public static final String README = "README.md";
     public static final String GITIGNORE = ".gitignore";
 
@@ -31,41 +31,41 @@ public final class RvcRepository
     {
     }
 
-    public static RevCommit init(Path directory, String name, byte[] schematicBytes, RvcPlayerIdentity player) throws IOException, GitAPIException
+    public static RevCommit init(Path directory, String name, byte[] structureBytes, RvcPlayerIdentity player) throws IOException, GitAPIException
     {
-        return commit(directory, name, schematicBytes, player, null, "init");
+        return commit(directory, name, structureBytes, player, null, "init");
     }
 
-    public static RevCommit initFromSavedSchematic(Path directory, String name, Path schematicFile, RvcPlayerIdentity player) throws IOException, GitAPIException
+    public static RevCommit initFromSavedStructure(Path directory, String name, Path structureFile, RvcPlayerIdentity player) throws IOException, GitAPIException
     {
-        Objects.requireNonNull(schematicFile, "schematicFile");
-        return init(directory, name, Files.readAllBytes(schematicFile), player);
+        Objects.requireNonNull(structureFile, "structureFile");
+        return init(directory, name, Files.readAllBytes(structureFile), player);
     }
 
-    public static RevCommit init(Path directory, String name, SchematicaSchematic schematic, RvcPlayerIdentity player) throws IOException, GitAPIException
+    public static RevCommit init(Path directory, String name, StructureTemplate structure, RvcPlayerIdentity player) throws IOException, GitAPIException
     {
-        return commit(directory, name, schematic, player, null, "init");
+        return commit(directory, name, structure, player, null, "init");
     }
 
-    public static RevCommit commit(Path directory, String name, byte[] schematicBytes, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
+    public static RevCommit commit(Path directory, String name, byte[] structureBytes, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
     {
         Objects.requireNonNull(directory, "directory");
-        Objects.requireNonNull(schematicBytes, "schematicBytes");
+        Objects.requireNonNull(structureBytes, "structureBytes");
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(message, "message");
         validateName(name);
 
         Files.createDirectories(directory);
         writeProjectMetadata(directory, name);
-        Files.write(directory.resolve(INDEX_SCHEMATIC), schematicBytes);
+        Files.write(directory.resolve(INDEX_STRUCTURE), structureBytes);
 
         return commitRvcRepository(directory, player, parent, message);
     }
 
-    public static RevCommit commit(Path directory, String name, SchematicaSchematic schematic, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
+    public static RevCommit commit(Path directory, String name, StructureTemplate structure, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
     {
         Objects.requireNonNull(directory, "directory");
-        Objects.requireNonNull(schematic, "schematic");
+        Objects.requireNonNull(structure, "structure");
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(message, "message");
         validateName(name);
@@ -73,10 +73,7 @@ public final class RvcRepository
         Files.createDirectories(directory);
         writeProjectMetadata(directory, name);
 
-        if (schematic.writeToFile(directory, INDEX_SCHEMATIC, true) == false)
-        {
-            throw new IOException("Failed to write RVC schematic file: " + directory.resolve(INDEX_SCHEMATIC));
-        }
+        RvcStructure.writeCompressed(structure, directory.resolve(INDEX_STRUCTURE));
 
         return commitRvcRepository(directory, player, parent, message);
     }
@@ -98,7 +95,7 @@ public final class RvcRepository
 
             git.add()
                     .addFilepattern(INDEX_JSON)
-                    .addFilepattern(INDEX_SCHEMATIC)
+                    .addFilepattern(INDEX_STRUCTURE)
                     .addFilepattern(README)
                     .addFilepattern(GITIGNORE)
                     .call();
@@ -116,7 +113,7 @@ public final class RvcRepository
     {
         if (name == null || name.isBlank())
         {
-            throw new IllegalArgumentException("RVC schematic name must not be blank");
+            throw new IllegalArgumentException("RVC project name must not be blank");
         }
     }
 
@@ -146,16 +143,16 @@ public final class RvcRepository
         return "# " + name + "\n\n" +
                 "Created by RVC.\n\n" +
                 "## About this project\n\n" +
-                "This repository stores a Minecraft schematic project managed by RVC. It is designed to make redstone contraptions, builds, and other schematic-based work easier to preserve, review, share, and collaborate on with standard Git tooling.\n\n" +
-                "RVC keeps the project files in a normal Git repository, so every saved version can become a commit with an author, message, timestamp, and complete file history. This makes the schematic easier to track over time and safer to publish to platforms such as GitHub.\n\n" +
+                "This repository stores a Minecraft structure project managed by RVC. It is designed to make redstone contraptions, builds, and other structure-based work easier to preserve, review, share, and collaborate on with standard Git tooling.\n\n" +
+                "RVC keeps the project files in a normal Git repository, so every saved version can become a commit with an author, message, timestamp, and complete file history. This makes the structure easier to track over time and safer to publish to platforms such as GitHub.\n\n" +
                 "## Why use RVC\n\n" +
-                "- Version history: keep a clear timeline of meaningful schematic changes.\n" +
+                "- Version history: keep a clear timeline of meaningful structure changes.\n" +
                 "- Collaboration: share the repository with other creators and review changes together.\n" +
                 "- Backup safety: push the project to a remote Git host so the work is not tied to one local world or computer.\n" +
                 "- Open workflow: use familiar Git commands and GitHub features without a custom storage format.\n" +
                 "- Reproducible releases: tag stable versions of a build before making larger experiments.\n\n" +
                 "## Project files\n\n" +
-                "- `index.schematic` contains the schematic data managed by RVC.\n" +
+                "- `index.nbt` contains the vanilla structure data managed by RVC.\n" +
                 "- `index.json` stores RVC metadata such as the project name and repository format version.\n" +
                 "- `README.md` explains the purpose of this repository and the basic Git workflow.\n" +
                 "- `local.json` stores local, uncommitted selection data and is ignored by Git.\n\n";
