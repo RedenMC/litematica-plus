@@ -29,6 +29,8 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     private List<RvcProjectService.CommitInfo> history = List.of();
     @Nullable private RvcProjectService.TrackingOverlay trackingOverlay;
     private String trackingStatus = "";
+    private boolean detachedHead;
+    private String checkoutBranchName = RvcProjectService.DEFAULT_BRANCH;
 
     public GuiRvcProject(Path repositoryDirectory, String projectName)
     {
@@ -41,6 +43,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     public void initGui()
     {
         super.initGui();
+        this.refreshRepositoryState();
         this.refreshHistory();
 
         int x = 12;
@@ -54,6 +57,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         int width = this.getStringWidth(label) + 20;
         this.addButton(new ButtonGeneric(this.getScreenWidth() - width - 12, y, width, 20, label), (button, mouseButton) -> GuiBase.openGui(new GuiRvcProjectManager()));
 
+        this.createDetachedHeadButton();
         this.createHistoryButtons();
     }
 
@@ -63,11 +67,16 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         super.drawContents(ctx, mouseX, mouseY, partialTicks);
 
         int x = 16;
-        int y = 78;
+        int y = this.getHistoryStartY();
 
         if (this.trackingStatus.isBlank() == false)
         {
             ctx.drawString(ctx.fontRenderer(), this.trackingStatus, x, 54, 0xFF9FE870, false);
+        }
+
+        if (this.detachedHead)
+        {
+            ctx.drawString(ctx.fontRenderer(), StringUtils.translate("litematica.gui.label.rvc_project.detached_head"), x, 72, 0xFFFFB45C, false);
         }
 
         ctx.drawString(ctx.fontRenderer(), StringUtils.translate("litematica.gui.label.rvc_project.history"), x, y - 16, 0xFFFFFFFF, false);
@@ -104,7 +113,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
     private void createHistoryButtons()
     {
-        int y = 74;
+        int y = this.getHistoryStartY() - 4;
         int maxY = this.getScreenHeight() - 18;
         int checkoutWidth = this.getStringWidth(StringUtils.translate("litematica.gui.button.rvc_project.checkout")) + 16;
         int inspectWidth = this.getStringWidth(StringUtils.translate("litematica.gui.button.rvc_project.inspect")) + 16;
@@ -121,6 +130,45 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             this.addButton(new ButtonGeneric(inspectX, y - 4, inspectWidth, 18, StringUtils.translate("litematica.gui.button.rvc_project.inspect")), new HistoryButtonListener(HistoryAction.INSPECT, commit, this));
             this.addButton(new ButtonGeneric(checkoutX, y - 4, checkoutWidth, 18, StringUtils.translate("litematica.gui.button.rvc_project.checkout")), new HistoryButtonListener(HistoryAction.CHECKOUT, commit, this));
             y += 18;
+        }
+    }
+
+    private void createDetachedHeadButton()
+    {
+        if (this.detachedHead == false)
+        {
+            return;
+        }
+
+        String label = StringUtils.translate("litematica.gui.button.rvc_project.checkout_branch", this.checkoutBranchName);
+        String message = StringUtils.translate("litematica.gui.label.rvc_project.detached_head");
+        int width = this.getStringWidth(label) + 16;
+        int x = Math.min(16 + this.getStringWidth(message) + 8, this.getScreenWidth() - width - 12);
+        this.addButton(new ButtonGeneric(x, 66, width, 18, label), new ButtonListener(ButtonType.CHECKOUT_BRANCH, this));
+    }
+
+    private int getHistoryStartY()
+    {
+        return this.detachedHead ? 104 : 78;
+    }
+
+    private void refreshRepositoryState()
+    {
+        this.detachedHead = false;
+        this.checkoutBranchName = RvcProjectService.DEFAULT_BRANCH;
+
+        try
+        {
+            this.detachedHead = RvcProjectService.isDetachedHead(this.repositoryDirectory);
+
+            if (this.detachedHead)
+            {
+                this.checkoutBranchName = RvcProjectService.preferredCheckoutBranchName(this.repositoryDirectory);
+            }
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.history_failed", e.getMessage());
         }
     }
 
@@ -165,7 +213,41 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         GuiBase.openGui(new GuiTextInput(256, "litematica.gui.title.rvc_project.commit_message", "update schematic", this, new CommitMessageSetter(this)));
     }
 
-    private void checkoutMasterAndPromptCommitMessage()
+    private void promptCheckoutBranch()
+    {
+        Minecraft minecraft = Minecraft.getInstance();
+
+        if (minecraft.level == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        Boolean hasUncommittedChanges = this.hasUncommittedChangesOrReport("litematica.error.rvc_project.checkout_failed");
+
+        if (hasUncommittedChanges == null)
+        {
+            return;
+        }
+
+        if (hasUncommittedChanges)
+        {
+            GuiConfirmAction gui = new GuiConfirmAction(
+                    420,
+                    "litematica.gui.title.rvc_project.confirm_reset_checkout_branch",
+                    new ResetAndCheckoutBranchConfirmListener(this),
+                    this,
+                    "litematica.gui.message.rvc_project.confirm_reset_checkout_detached_branch",
+                    this.checkoutBranchName
+            );
+            GuiBase.openGui(gui);
+            return;
+        }
+
+        this.checkoutBranch();
+    }
+
+    private void checkoutBranch()
     {
         Minecraft minecraft = Minecraft.getInstance();
 
@@ -177,7 +259,53 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
         try
         {
-            RvcProjectService.GameRestore restore = RvcProjectService.checkoutBranchToGame(this.repositoryDirectory, this.projectName, RvcProjectService.DEFAULT_BRANCH, minecraft.level, minecraft.level, this);
+            this.removeTrackingOverlay();
+            RvcProjectService.SchematicWorldRestore restore = RvcProjectService.checkoutBranchToSchematicWorld(this.repositoryDirectory, this.projectName, this.checkoutBranchName, minecraft.level, this);
+            this.trackingOverlay = restore.overlay();
+            this.updateTrackingStatusAfterRestore();
+            this.initGui();
+            this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.checked_out_branch", this.checkoutBranchName, restore.boxCount());
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.checkout_failed", e.getMessage());
+        }
+    }
+
+    private void checkoutMasterAndPromptCommitMessage()
+    {
+        Minecraft minecraft = Minecraft.getInstance();
+
+        if (minecraft.level == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        Boolean hasUncommittedChanges = this.hasUncommittedChangesOrReport("litematica.error.rvc_project.checkout_failed");
+
+        if (hasUncommittedChanges == null)
+        {
+            return;
+        }
+
+        if (hasUncommittedChanges)
+        {
+            GuiConfirmAction gui = new GuiConfirmAction(
+                    420,
+                    "litematica.gui.title.rvc_project.confirm_reset_checkout_branch",
+                    new ResetAndCheckoutMasterBeforeCommitListener(this),
+                    this,
+                    "litematica.gui.message.rvc_project.confirm_reset_checkout_branch",
+                    RvcProjectService.DEFAULT_BRANCH
+            );
+            GuiBase.openGui(gui);
+            return;
+        }
+
+        try
+        {
+            RvcProjectService.SchematicWorldRestore restore = RvcProjectService.checkoutBranchToSchematicWorld(this.repositoryDirectory, this.projectName, RvcProjectService.DEFAULT_BRANCH, minecraft.level, this);
             this.trackingOverlay = restore.overlay();
             this.updateTrackingStatusAfterRestore();
             this.initGui();
@@ -243,6 +371,46 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         }
     }
 
+    private void promptPull()
+    {
+        Minecraft minecraft = Minecraft.getInstance();
+
+        if (minecraft.level == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        Boolean hasUncommittedChanges = this.hasUncommittedChangesOrReport("litematica.error.rvc_project.pull_failed");
+
+        if (hasUncommittedChanges == null)
+        {
+            return;
+        }
+
+        if (hasUncommittedChanges)
+        {
+            GuiConfirmAction gui = new GuiConfirmAction(
+                    420,
+                    "litematica.gui.title.rvc_project.confirm_reset_pull",
+                    new ResetAndPullConfirmListener(this),
+                    this,
+                    "litematica.gui.message.rvc_project.confirm_reset_pull"
+            );
+            GuiBase.openGui(gui);
+            return;
+        }
+
+        GuiConfirmAction gui = new GuiConfirmAction(
+                420,
+                "litematica.gui.title.rvc_project.confirm_pull",
+                new PullConfirmListener(this),
+                this,
+                "litematica.gui.message.rvc_project.confirm_pull"
+        );
+        GuiBase.openGui(gui);
+    }
+
     private void pull()
     {
         Minecraft minecraft = Minecraft.getInstance();
@@ -256,10 +424,38 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         try
         {
             String result = RvcProjectService.pull(this.repositoryDirectory);
-            this.trackingOverlay = RvcProjectService.restoreWorkingTreeToGame(this.repositoryDirectory, this.projectName, minecraft.level, minecraft.level, this).overlay();
+            this.removeTrackingOverlay();
+            this.trackingOverlay = RvcProjectService.restoreWorkingTreeToSchematicWorld(this.repositoryDirectory, this.projectName, minecraft.level, this).overlay();
             this.updateTrackingStatusAfterRestore();
             this.initGui();
             this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.pulled", result);
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.pull_failed", e.getMessage());
+        }
+    }
+
+    @Nullable
+    private Boolean hasUncommittedChangesOrReport(String errorKey)
+    {
+        try
+        {
+            return RvcProjectService.hasUncommittedChanges(this.repositoryDirectory);
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, errorKey, e.getMessage());
+            return null;
+        }
+    }
+
+    private void resetWorkingTreeThenPull()
+    {
+        try
+        {
+            RvcProjectService.resetWorkingTreeToHead(this.repositoryDirectory);
+            this.pull();
         }
         catch (Exception e)
         {
@@ -276,11 +472,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     {
         try
         {
-            if (this.trackingOverlay != null)
-            {
-                DataManager.getSchematicPlacementManager().removeSchematicPlacement(this.trackingOverlay.placement(), false);
-            }
-
+            this.removeTrackingOverlay();
             this.trackingOverlay = RvcProjectService.loadTrackingOverlay(this.repositoryDirectory, this.projectName, Minecraft.getInstance().level, this);
 
             if (this.trackingOverlay.verifierStarted())
@@ -298,9 +490,62 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         }
     }
 
+    private void removeTrackingOverlay()
+    {
+        if (this.trackingOverlay != null)
+        {
+            DataManager.getSchematicPlacementManager().removeSchematicPlacement(this.trackingOverlay.placement(), false);
+            this.trackingOverlay = null;
+        }
+    }
+
     private void inspectCommit(RvcProjectService.CommitInfo commit)
     {
         this.addMessage(MessageType.INFO, "litematica.message.rvc_project.inspect_commit", commit.shortId(), commit.message());
+    }
+
+    private void promptCheckoutCommit(RvcProjectService.CommitInfo commit)
+    {
+        Minecraft minecraft = Minecraft.getInstance();
+
+        if (minecraft.level == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        Boolean hasUncommittedChanges = this.hasUncommittedChangesOrReport("litematica.error.rvc_project.checkout_failed");
+
+        if (hasUncommittedChanges == null)
+        {
+            return;
+        }
+
+        if (hasUncommittedChanges)
+        {
+            GuiConfirmAction gui = new GuiConfirmAction(
+                    420,
+                    "litematica.gui.title.rvc_project.confirm_reset_checkout",
+                    new ResetAndCheckoutCommitConfirmListener(this, commit),
+                    this,
+                    "litematica.gui.message.rvc_project.confirm_reset_checkout",
+                    commit.shortId(),
+                    commit.message()
+            );
+            GuiBase.openGui(gui);
+            return;
+        }
+
+        GuiConfirmAction gui = new GuiConfirmAction(
+                420,
+                "litematica.gui.title.rvc_project.confirm_checkout",
+                new CheckoutCommitConfirmListener(this, commit),
+                this,
+                "litematica.gui.message.rvc_project.confirm_checkout",
+                commit.shortId(),
+                commit.message()
+        );
+        GuiBase.openGui(gui);
     }
 
     private void checkoutCommit(RvcProjectService.CommitInfo commit)
@@ -315,11 +560,51 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
         try
         {
-            RvcProjectService.GameRestore restore = RvcProjectService.checkoutCommitToGame(this.repositoryDirectory, this.projectName, commit.id(), minecraft.level, minecraft.level, this);
+            this.removeTrackingOverlay();
+            RvcProjectService.SchematicWorldRestore restore = RvcProjectService.checkoutCommitToSchematicWorld(this.repositoryDirectory, this.projectName, commit.id(), minecraft.level, this);
             this.trackingOverlay = restore.overlay();
             this.updateTrackingStatusAfterRestore();
             this.initGui();
             this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.checked_out", commit.shortId(), restore.boxCount());
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.checkout_failed", e.getMessage());
+        }
+    }
+
+    private void resetWorkingTreeThenCheckoutCommit(RvcProjectService.CommitInfo commit)
+    {
+        try
+        {
+            RvcProjectService.resetWorkingTreeToHead(this.repositoryDirectory);
+            this.checkoutCommit(commit);
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.checkout_failed", e.getMessage());
+        }
+    }
+
+    private void resetWorkingTreeThenCheckoutMasterAndPromptCommitMessage()
+    {
+        try
+        {
+            RvcProjectService.resetWorkingTreeToHead(this.repositoryDirectory);
+            this.checkoutMasterAndPromptCommitMessage();
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.checkout_failed", e.getMessage());
+        }
+    }
+
+    private void resetWorkingTreeThenCheckoutBranch()
+    {
+        try
+        {
+            RvcProjectService.resetWorkingTreeToHead(this.repositoryDirectory);
+            this.checkoutBranch();
         }
         catch (Exception e)
         {
@@ -370,7 +655,8 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         UPDATE_AREAS("litematica.gui.button.rvc_project.update_areas"),
         COMMIT("litematica.gui.button.rvc_project.commit"),
         PUSH("litematica.gui.button.rvc_project.push"),
-        PULL("litematica.gui.button.rvc_project.pull");
+        PULL("litematica.gui.button.rvc_project.pull"),
+        CHECKOUT_BRANCH("litematica.gui.button.rvc_project.checkout_branch");
 
         private final String translationKey;
 
@@ -396,7 +682,8 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
                 case UPDATE_AREAS -> this.gui.updateAreas();
                 case COMMIT -> this.gui.promptCommitMessage();
                 case PUSH -> this.gui.push();
-                case PULL -> this.gui.pull();
+                case PULL -> this.gui.promptPull();
+                case CHECKOUT_BRANCH -> this.gui.promptCheckoutBranch();
             }
         }
     }
@@ -409,7 +696,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             switch (this.action)
             {
                 case INSPECT -> this.gui.inspectCommit(this.commit);
-                case CHECKOUT -> this.gui.checkoutCommit(this.commit);
+                case CHECKOUT -> this.gui.promptCheckoutCommit(this.commit);
             }
         }
     }
@@ -456,6 +743,102 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         public boolean onActionConfirmed()
         {
             this.gui.checkoutMasterAndPromptCommitMessage();
+            return true;
+        }
+
+        @Override
+        public boolean onActionCancelled()
+        {
+            return true;
+        }
+    }
+
+    private record ResetAndCheckoutMasterBeforeCommitListener(GuiRvcProject gui) implements IConfirmationListener
+    {
+        @Override
+        public boolean onActionConfirmed()
+        {
+            this.gui.resetWorkingTreeThenCheckoutMasterAndPromptCommitMessage();
+            return true;
+        }
+
+        @Override
+        public boolean onActionCancelled()
+        {
+            return true;
+        }
+    }
+
+    private record ResetAndCheckoutBranchConfirmListener(GuiRvcProject gui) implements IConfirmationListener
+    {
+        @Override
+        public boolean onActionConfirmed()
+        {
+            this.gui.resetWorkingTreeThenCheckoutBranch();
+            return true;
+        }
+
+        @Override
+        public boolean onActionCancelled()
+        {
+            return true;
+        }
+    }
+
+    private record ResetAndPullConfirmListener(GuiRvcProject gui) implements IConfirmationListener
+    {
+        @Override
+        public boolean onActionConfirmed()
+        {
+            this.gui.resetWorkingTreeThenPull();
+            return true;
+        }
+
+        @Override
+        public boolean onActionCancelled()
+        {
+            return true;
+        }
+    }
+
+    private record PullConfirmListener(GuiRvcProject gui) implements IConfirmationListener
+    {
+        @Override
+        public boolean onActionConfirmed()
+        {
+            this.gui.pull();
+            return true;
+        }
+
+        @Override
+        public boolean onActionCancelled()
+        {
+            return true;
+        }
+    }
+
+    private record ResetAndCheckoutCommitConfirmListener(GuiRvcProject gui, RvcProjectService.CommitInfo commit) implements IConfirmationListener
+    {
+        @Override
+        public boolean onActionConfirmed()
+        {
+            this.gui.resetWorkingTreeThenCheckoutCommit(this.commit);
+            return true;
+        }
+
+        @Override
+        public boolean onActionCancelled()
+        {
+            return true;
+        }
+    }
+
+    private record CheckoutCommitConfirmListener(GuiRvcProject gui, RvcProjectService.CommitInfo commit) implements IConfirmationListener
+    {
+        @Override
+        public boolean onActionConfirmed()
+        {
+            this.gui.checkoutCommit(this.commit);
             return true;
         }
 

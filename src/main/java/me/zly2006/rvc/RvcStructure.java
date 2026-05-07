@@ -101,7 +101,7 @@ public final class RvcStructure
                     BlockPos relativePos = new BlockPos(x, y, z);
                     BlockPos worldPos = relativePos.offset(origin);
 
-                    if (isInsideAnyBox(worldPos, boxes))
+                    if (isTrackedPosition(worldPos, boxes))
                     {
                         tempWorld.setBlock(relativePos, sourceWorld.getBlockState(worldPos), 0x12);
                         BlockEntity blockEntity = sourceWorld.getBlockEntity(worldPos);
@@ -132,7 +132,7 @@ public final class RvcStructure
         }
     }
 
-    private static boolean isInsideAnyBox(BlockPos pos, List<Box> boxes)
+    static boolean isTrackedPosition(BlockPos pos, List<Box> boxes)
     {
         for (Box box : boxes)
         {

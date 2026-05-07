@@ -23,6 +23,8 @@ import com.google.gson.JsonPrimitive;
 import org.apache.commons.lang3.tuple.Pair;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.PullResult;
+import org.eclipse.jgit.api.ResetCommand;
+import org.eclipse.jgit.api.Status;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
@@ -97,9 +99,8 @@ public final class RvcProjectService
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(message, "message");
 
-        ObjectId parent = RvcRepository.resolveHead(repositoryDirectory);
         StructureTemplate structure = createStructureFromIndexSubRegionsOrFallbackToCurrentPositionUtilsGetValidBoxes(repositoryDirectory, world, currentSelectionFallback, ignoreEntities);
-        return RvcRepository.commit(repositoryDirectory, projectName, structure, player, parent, normalizeCommitMessage(message));
+        return RvcRepository.commit(repositoryDirectory, projectName, structure, player, null, normalizeCommitMessage(message));
     }
 
     public static void writeProjectMetadataWithSubRegions(Path repositoryDirectory, String projectName, AreaSelection selection) throws IOException
@@ -360,11 +361,54 @@ public final class RvcProjectService
         }
     }
 
-    public static GameRestore restoreWorkingTreeToGame(Path repositoryDirectory, String projectName, Level world, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws IOException
+    public static String preferredCheckoutBranchName(Path repositoryDirectory) throws IOException
+    {
+        Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
+
+        try (Git git = Git.open(repositoryDirectory.toFile()))
+        {
+            String branch = historyBranchRef(git.getRepository());
+
+            if (branch.startsWith(Constants.R_HEADS))
+            {
+                return branch.substring(Constants.R_HEADS.length());
+            }
+
+            throw new IOException("RVC repository has no local branch to checkout");
+        }
+    }
+
+    public static boolean hasUncommittedChanges(Path repositoryDirectory) throws GitAPIException, IOException
+    {
+        Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
+
+        try (Git git = Git.open(repositoryDirectory.toFile()))
+        {
+            Status status = git.status().call();
+            // reset --hard only returns tracked paths and the index to HEAD.
+            return status.getAdded().isEmpty() == false ||
+                    status.getChanged().isEmpty() == false ||
+                    status.getConflicting().isEmpty() == false ||
+                    status.getMissing().isEmpty() == false ||
+                    status.getModified().isEmpty() == false ||
+                    status.getRemoved().isEmpty() == false;
+        }
+    }
+
+    public static void resetWorkingTreeToHead(Path repositoryDirectory) throws GitAPIException, IOException
+    {
+        Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
+
+        try (Git git = Git.open(repositoryDirectory.toFile()))
+        {
+            git.reset().setMode(ResetCommand.ResetType.HARD).call();
+        }
+    }
+
+    public static SchematicWorldRestore restoreWorkingTreeToSchematicWorld(Path repositoryDirectory, String projectName, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws IOException
     {
         Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
         Objects.requireNonNull(projectName, "projectName");
-        Objects.requireNonNull(world, "world");
 
         int trackedBoxCount = readTrackedBoxes(repositoryDirectory).size();
         BlockPos schematicWorldOrigin = resolveSchematicWorldOrigin(repositoryDirectory);
@@ -377,22 +421,20 @@ public final class RvcProjectService
         }
 
         SchematicPlacement placement = SchematicPlacement.createFor(schematic, schematicWorldOrigin, "RVC: " + projectName, true, true);
-        schematic.placeToWorld(world, placement, false);
-
         TrackingOverlay overlay = addTrackingOverlay(placement, clientLevel, completionListener);
-        return new GameRestore(schematicWorldOrigin, trackedBoxCount, overlay);
+        return new SchematicWorldRestore(schematicWorldOrigin, trackedBoxCount, overlay);
     }
 
-    public static GameRestore checkoutCommitToGame(Path repositoryDirectory, String projectName, String commitId, Level world, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws GitAPIException, IOException
+    public static SchematicWorldRestore checkoutCommitToSchematicWorld(Path repositoryDirectory, String projectName, String commitId, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws GitAPIException, IOException
     {
         checkoutCommitToWorkingTree(repositoryDirectory, commitId);
-        return restoreWorkingTreeToGame(repositoryDirectory, projectName, world, clientLevel, completionListener);
+        return restoreWorkingTreeToSchematicWorld(repositoryDirectory, projectName, clientLevel, completionListener);
     }
 
-    public static GameRestore checkoutBranchToGame(Path repositoryDirectory, String projectName, String branchName, Level world, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws GitAPIException, IOException
+    public static SchematicWorldRestore checkoutBranchToSchematicWorld(Path repositoryDirectory, String projectName, String branchName, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws GitAPIException, IOException
     {
         checkoutBranchToWorkingTree(repositoryDirectory, branchName);
-        return restoreWorkingTreeToGame(repositoryDirectory, projectName, world, clientLevel, completionListener);
+        return restoreWorkingTreeToSchematicWorld(repositoryDirectory, projectName, clientLevel, completionListener);
     }
 
     public static boolean hasRemote(Path repositoryDirectory) throws IOException
@@ -433,7 +475,7 @@ public final class RvcProjectService
 
         try (Git git = Git.open(repositoryDirectory.toFile()))
         {
-            String branch = currentBranch(git.getRepository());
+            String branch = pushBranchRef(git.getRepository());
 
             for (PushResult result : git.push().setRemote("origin").add(branch).call())
             {
@@ -448,6 +490,7 @@ public final class RvcProjectService
     {
         try (Git git = Git.open(repositoryDirectory.toFile()))
         {
+            currentBranch(git.getRepository());
             PullResult result = git.pull().setRemote("origin").call();
             return result.isSuccessful() ? "OK" : "FAILED";
         }
@@ -737,6 +780,18 @@ public final class RvcProjectService
         return Constants.HEAD;
     }
 
+    private static String pushBranchRef(Repository repository) throws IOException
+    {
+        String branch = historyBranchRef(repository);
+
+        if (branch.startsWith(Constants.R_HEADS))
+        {
+            return branch;
+        }
+
+        throw new IOException("RVC repository has no local branch to push");
+    }
+
     private static void rememberCurrentBranchForHistory(Repository repository) throws IOException
     {
         String fullBranch = repository.getFullBranch();
@@ -770,7 +825,7 @@ public final class RvcProjectService
     {
     }
 
-    public record GameRestore(BlockPos schematicWorldOrigin, int boxCount, TrackingOverlay overlay)
+    public record SchematicWorldRestore(BlockPos schematicWorldOrigin, int boxCount, TrackingOverlay overlay)
     {
     }
 

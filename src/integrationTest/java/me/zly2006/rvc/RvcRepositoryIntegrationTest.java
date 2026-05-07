@@ -34,6 +34,7 @@ import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.treewalk.TreeWalk;
 import fi.dy.masa.litematica.selection.AreaSelection;
+import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.malilib.util.data.json.JsonUtils;
 
 public class RvcRepositoryIntegrationTest
@@ -42,22 +43,44 @@ public class RvcRepositoryIntegrationTest
     {
         IntegrationTestSupport.run("init writes RVC files and creates the first Git commit", RvcRepositoryIntegrationTest::initWritesRvcFilesAndCreatesTheFirstGitCommit);
         IntegrationTestSupport.run("init commits an index structure saved as vanilla nbt", RvcRepositoryIntegrationTest::initCommitsAnIndexStructureSavedAsVanillaNbt);
-        IntegrationTestSupport.run("commit uses the supplied parent and history lists newest commits first", RvcRepositoryIntegrationTest::commitUsesSuppliedParentAndHistoryListsNewestFirst);
+        IntegrationTestSupport.run("raw index bytes are rejected instead of committed", RvcRepositoryIntegrationTest::rawIndexBytesAreRejectedInsteadOfCommitted);
+        IntegrationTestSupport.run("commit uses current branch HEAD and history lists newest commits first", RvcRepositoryIntegrationTest::commitUsesCurrentBranchHeadAndHistoryListsNewestFirst);
         IntegrationTestSupport.run("project service lists valid repositories and pushes to a remote", RvcRepositoryIntegrationTest::projectServiceListsValidRepositoriesAndPushesToRemote);
-        IntegrationTestSupport.run("local selection is stored in local.json and ignored by Git", RvcRepositoryIntegrationTest::localSelectionIsStoredInLocalJsonAndIgnoredByGit);
+        IntegrationTestSupport.run("push uses the last active branch while HEAD is detached", RvcRepositoryIntegrationTest::pushUsesLastActiveBranchWhileHeadIsDetached);
+        IntegrationTestSupport.run("legacy local selection is local-only and ignored by Git", RvcRepositoryIntegrationTest::legacyLocalSelectionIsLocalOnlyAndIgnoredByGit);
         IntegrationTestSupport.run("sub-regions are versioned in index json and master origin is local only", RvcRepositoryIntegrationTest::subRegionsAreVersionedInIndexJsonAndMasterOriginIsLocalOnly);
+        IntegrationTestSupport.run("untracked gaps between sub-regions are not tracked", RvcRepositoryIntegrationTest::untrackedGapsBetweenSubRegionsAreNotTracked);
         IntegrationTestSupport.run("checkout updates the working tree while preserving visible history", RvcRepositoryIntegrationTest::checkoutUpdatesWorkingTreeWhilePreservingVisibleHistory);
         IntegrationTestSupport.run("commit history remains scoped to the branch after checkout", RvcRepositoryIntegrationTest::commitHistoryRemainsScopedToBranchAfterCheckout);
         IntegrationTestSupport.run("commit after checkout is rejected while HEAD is detached", RvcRepositoryIntegrationTest::commitAfterCheckoutIsRejectedWhileHeadIsDetached);
+        IntegrationTestSupport.run("reset working tree to HEAD discards tracked dirty changes", RvcRepositoryIntegrationTest::resetWorkingTreeToHeadDiscardsTrackedDirtyChanges);
+        IntegrationTestSupport.run("checkout can continue after resetting a dirty working tree", RvcRepositoryIntegrationTest::checkoutCanContinueAfterResettingDirtyWorkingTree);
     }
 
-    private static void commitUsesSuppliedParentAndHistoryListsNewestFirst() throws Exception
+    private static void rawIndexBytesAreRejectedInsteadOfCommitted() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-invalid-structure-");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderBadBytes", UUID.fromString("123e4567-e89b-12d3-a456-426614174010"));
+
+        try
+        {
+            RvcRepository.init(repoDir, "Invalid Structure", "structure bytes".getBytes(StandardCharsets.UTF_8), player);
+            throw new AssertionError("raw non-NBT index bytes should be rejected");
+        }
+        catch (IOException e)
+        {
+            IntegrationTestSupport.assertTrue(e.getMessage().contains("Not in GZIP format") || e.getMessage().contains("valid vanilla structure"), "invalid structure error should explain the rejected data");
+        }
+    }
+
+    private static void commitUsesCurrentBranchHeadAndHistoryListsNewestFirst() throws Exception
     {
         Path repoDir = Files.createTempDirectory("rvc-commit-parent-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderThree", UUID.fromString("123e4567-e89b-12d3-a456-426614174004"));
 
         RevCommit first = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, null, "init");
-        RevCommit second = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, first.getId(), "update from world");
+        RevCommit second = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, null, "update from world");
+        RevCommit third = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, first.getId(), "ignore stale supplied parent");
 
         try (Git git = Git.open(repoDir.toFile()))
         {
@@ -66,17 +89,17 @@ public class RvcRepositoryIntegrationTest
             try (RevWalk revWalk = new RevWalk(repository))
             {
                 RevCommit parsedSecond = revWalk.parseCommit(repository.resolve(Constants.HEAD));
-                IntegrationTestSupport.assertEquals(second.getId(), parsedSecond.getId(), "HEAD should point at the second commit");
-                IntegrationTestSupport.assertEquals(1, parsedSecond.getParentCount(), "second commit should use the supplied parent");
-                IntegrationTestSupport.assertEquals(first.getId(), parsedSecond.getParent(0).getId(), "second commit parent id");
+                IntegrationTestSupport.assertEquals(third.getId(), parsedSecond.getId(), "HEAD should point at the newest commit");
+                IntegrationTestSupport.assertEquals(1, parsedSecond.getParentCount(), "new commit should have one parent");
+                IntegrationTestSupport.assertEquals(second.getId(), parsedSecond.getParent(0).getId(), "commit should parent the current branch HEAD, not a stale supplied parent");
             }
         }
 
         List<RvcProjectService.CommitInfo> history = RvcProjectService.listCommits(repoDir);
-        IntegrationTestSupport.assertEquals(2, history.size(), "history size");
-        IntegrationTestSupport.assertEquals(second.getName(), history.get(0).id(), "newest commit first");
-        IntegrationTestSupport.assertEquals("update from world", history.get(0).message(), "newest commit message");
-        IntegrationTestSupport.assertEquals(first.getName(), history.get(1).id(), "oldest commit second");
+        IntegrationTestSupport.assertEquals(3, history.size(), "history size");
+        IntegrationTestSupport.assertEquals(third.getName(), history.get(0).id(), "newest commit first");
+        IntegrationTestSupport.assertEquals("ignore stale supplied parent", history.get(0).message(), "newest commit message");
+        IntegrationTestSupport.assertEquals(first.getName(), history.get(2).id(), "oldest commit last");
     }
 
     private static void projectServiceListsValidRepositoriesAndPushesToRemote() throws Exception
@@ -87,7 +110,7 @@ public class RvcRepositoryIntegrationTest
         Path invalidRepo = reposDir.resolve("Not Git");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderFour", UUID.fromString("123e4567-e89b-12d3-a456-426614174005"));
 
-        RvcRepository.commit(validRepo, "Valid Project", createTinyStructureTemplate(), player, null, "init");
+        RevCommit commit = RvcRepository.commit(validRepo, "Valid Project", createTinyStructureTemplate(), player, null, "init");
         Files.createDirectories(invalidRepo);
 
         List<RvcProjectService.Project> projects = RvcProjectService.listProjects(runDir);
@@ -96,16 +119,46 @@ public class RvcRepositoryIntegrationTest
         IntegrationTestSupport.assertEquals(validRepo, projects.get(0).directory(), "listed project directory");
 
         Path remoteDir = Files.createTempDirectory("rvc-remote-").resolve("remote.git");
+        List<String> pushStatuses;
         try (Git ignored = Git.init().setBare(true).setDirectory(remoteDir.toFile()).call())
         {
             RvcProjectService.setRemote(validRepo, remoteDir.toUri().toString());
-            RvcProjectService.push(validRepo);
+            pushStatuses = RvcProjectService.push(validRepo);
         }
 
         try (Repository remoteRepository = new FileRepositoryBuilder().setGitDir(remoteDir.toFile()).build())
         {
-            IntegrationTestSupport.assertNotNull(remoteRepository.resolve(Constants.HEAD), "remote should receive pushed HEAD");
+            ObjectId masterId = remoteRepository.resolve(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH);
+            IntegrationTestSupport.assertEquals(commit.getId(), masterId, "remote should receive pushed master branch");
+            IntegrationTestSupport.assertTrue(pushStatuses.stream().anyMatch(status -> status.contains(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH)), "push status should report the pushed branch");
         }
+    }
+
+    private static void pushUsesLastActiveBranchWhileHeadIsDetached() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-detached-push-");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderDetachedPush", UUID.fromString("123e4567-e89b-12d3-a456-426614174013"));
+        RevCommit first = RvcRepository.commit(repoDir, "Detached Push", createSingleBlockStructureTemplate("minecraft:stone"), player, null, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Detached Push", createSingleBlockStructureTemplate("minecraft:dirt"), player, null, "second");
+
+        RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
+
+        Path remoteDir = Files.createTempDirectory("rvc-detached-push-remote-").resolve("remote.git");
+        List<String> pushStatuses;
+        try (Git ignored = Git.init().setBare(true).setDirectory(remoteDir.toFile()).call())
+        {
+            RvcProjectService.setRemote(repoDir, remoteDir.toUri().toString());
+            pushStatuses = RvcProjectService.push(repoDir);
+        }
+
+        try (Repository remoteRepository = new FileRepositoryBuilder().setGitDir(remoteDir.toFile()).build())
+        {
+            ObjectId masterId = remoteRepository.resolve(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH);
+            IntegrationTestSupport.assertEquals(second.getId(), masterId, "detached push should publish the last active branch tip");
+            IntegrationTestSupport.assertTrue(pushStatuses.stream().anyMatch(status -> status.contains(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH)), "detached push status should report the pushed branch");
+        }
+
+        IntegrationTestSupport.assertEquals(first.getId(), RvcRepository.resolveHead(repoDir), "detached push must not move the checked-out HEAD");
     }
 
     private static void initWritesRvcFilesAndCreatesTheFirstGitCommit() throws Exception
@@ -116,13 +169,13 @@ public class RvcRepositoryIntegrationTest
         RvcRepository.init(
                 repoDir,
                 "Starter Build",
-                "structure bytes".getBytes(StandardCharsets.UTF_8),
+                createTinyStructureTemplate(),
                 new RvcPlayerIdentity("BuilderOne", playerUuid)
         );
 
         IntegrationTestSupport.assertFileContains(repoDir.resolve("index.json"), "\"rvc_version\": 1");
         IntegrationTestSupport.assertFileContains(repoDir.resolve("index.json"), "\"name\": \"Starter Build\"");
-        IntegrationTestSupport.assertFileContains(repoDir.resolve("index.nbt"), "structure bytes");
+        assertStructurePaletteContains(repoDir.resolve(RvcRepository.INDEX_STRUCTURE), "minecraft:stone");
         IntegrationTestSupport.assertFileContains(repoDir.resolve("README.md"), "# Starter Build");
 
         try (Git git = Git.open(repoDir.toFile()))
@@ -146,20 +199,19 @@ public class RvcRepositoryIntegrationTest
                 IntegrationTestSupport.assertTrue(rawCommit.contains("\nrvc-version 1\n"), "commit should contain rvc-version metadata");
                 IntegrationTestSupport.assertTrue(rawCommit.contains("\nx-created-by rvc\n"), "commit should contain x-created-by metadata");
 
-                Set<String> files = listTreeFiles(repository, commit.getTree());
-                IntegrationTestSupport.assertEquals(Set.of(".gitignore", "README.md", "index.json", "index.nbt"), files, "committed files");
+                assertCommittedCoreFiles(repository, commit);
                 IntegrationTestSupport.assertTrue(git.status().call().isClean(), "working tree should be clean after init commit");
             }
         }
     }
 
-    private static void localSelectionIsStoredInLocalJsonAndIgnoredByGit() throws Exception
+    private static void legacyLocalSelectionIsLocalOnlyAndIgnoredByGit() throws Exception
     {
         Path repoDir = Files.createTempDirectory("rvc-local-selection-");
         AreaSelection selection = createAreaSelectionFromJson("Stored Selection");
 
         RvcProjectService.writeLocalSelection(repoDir, selection);
-        RvcRepository.commit(repoDir, "Local Selection", "structure bytes".getBytes(StandardCharsets.UTF_8), new RvcPlayerIdentity("BuilderFive", UUID.fromString("123e4567-e89b-12d3-a456-426614174006")), null, "init");
+        RvcRepository.commit(repoDir, "Local Selection", createTinyStructureTemplate(), new RvcPlayerIdentity("BuilderFive", UUID.fromString("123e4567-e89b-12d3-a456-426614174006")), null, "init");
 
         IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcProjectService.LOCAL_JSON), "\"local_selection\"");
         IntegrationTestSupport.assertFileContains(repoDir.resolve(".gitignore"), "/local.json");
@@ -195,11 +247,22 @@ public class RvcRepositoryIntegrationTest
         IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcRepository.INDEX_JSON), "\"pos1\": [");
         IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcProjectService.LOCAL_JSON), "\"master_origin\"");
         IntegrationTestSupport.assertTrue(Files.readString(repoDir.resolve(RvcRepository.INDEX_JSON)).contains("master_origin") == false, "master origin must not be versioned in index.json");
+        IntegrationTestSupport.assertTrue(Files.readString(repoDir.resolve(RvcProjectService.LOCAL_JSON)).contains(RvcProjectService.LOCAL_SELECTION_KEY) == false, "new sub-region metadata must not write legacy local_selection");
 
         AreaSelection restored = RvcProjectService.readProjectAreaSelection(repoDir);
         IntegrationTestSupport.assertNotNull(restored, "index/local should restore project area selection");
         IntegrationTestSupport.assertEquals("Relative Project", restored.getName(), "restored project selection name");
         IntegrationTestSupport.assertEquals(1, restored.getAllSubRegionBoxes().size(), "restored sub-region count");
+    }
+
+    private static void untrackedGapsBetweenSubRegionsAreNotTracked() throws Exception
+    {
+        AreaSelection selection = createTwoBoxAreaSelectionFromJson("Gap Selection");
+        List<Box> boxes = List.copyOf(selection.getAllSubRegionBoxes());
+
+        IntegrationTestSupport.assertTrue(RvcStructure.isTrackedPosition(new BlockPos(0, 0, 0), boxes), "first sub-region should be tracked");
+        IntegrationTestSupport.assertTrue(RvcStructure.isTrackedPosition(new BlockPos(1, 0, 0), boxes) == false, "gap between independent sub-regions must not be tracked");
+        IntegrationTestSupport.assertTrue(RvcStructure.isTrackedPosition(new BlockPos(2, 0, 0), boxes), "second sub-region should be tracked");
     }
 
     private static AreaSelection createAreaSelectionFromJson(String name)
@@ -220,17 +283,40 @@ public class RvcRepositoryIntegrationTest
         return AreaSelection.fromJson(selection);
     }
 
+    private static AreaSelection createTwoBoxAreaSelectionFromJson(String name)
+    {
+        JsonObject selection = new JsonObject();
+        JsonArray boxes = new JsonArray();
+        boxes.add(createBoxJson("left", new BlockPos(0, 0, 0), new BlockPos(0, 0, 0)));
+        boxes.add(createBoxJson("right", new BlockPos(2, 0, 0), new BlockPos(2, 0, 0)));
+
+        selection.add("name", new JsonPrimitive(name));
+        selection.add("current", new JsonPrimitive("left"));
+        selection.add("boxes", boxes);
+
+        return AreaSelection.fromJson(selection);
+    }
+
+    private static JsonObject createBoxJson(String name, BlockPos pos1, BlockPos pos2)
+    {
+        JsonObject box = new JsonObject();
+        box.add("name", new JsonPrimitive(name));
+        box.add("pos1", JsonUtils.blockPosToJson(pos1));
+        box.add("pos2", JsonUtils.blockPosToJson(pos2));
+        return box;
+    }
+
     private static void checkoutUpdatesWorkingTreeWhilePreservingVisibleHistory() throws Exception
     {
         Path repoDir = Files.createTempDirectory("rvc-checkout-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderSix", UUID.fromString("123e4567-e89b-12d3-a456-426614174007"));
-        RevCommit first = RvcRepository.commit(repoDir, "Checkout Project", "first structure".getBytes(StandardCharsets.UTF_8), player, null, "first");
-        RevCommit second = RvcRepository.commit(repoDir, "Checkout Project", "second structure".getBytes(StandardCharsets.UTF_8), player, first.getId(), "second");
+        RevCommit first = RvcRepository.commit(repoDir, "Checkout Project", createSingleBlockStructureTemplate("minecraft:stone"), player, null, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Checkout Project", createSingleBlockStructureTemplate("minecraft:dirt"), player, null, "second");
 
         List<RvcProjectService.CommitInfo> branchHistoryBeforeCheckout = RvcProjectService.listCommits(repoDir);
         RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
 
-        IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcRepository.INDEX_STRUCTURE), "first structure");
+        assertStructurePaletteContains(repoDir.resolve(RvcRepository.INDEX_STRUCTURE), "minecraft:stone");
         IntegrationTestSupport.assertEquals(first.getId(), RvcRepository.resolveHead(repoDir), "checkout should move HEAD to the selected commit");
 
         List<RvcProjectService.CommitInfo> history = RvcProjectService.listCommits(repoDir);
@@ -243,8 +329,8 @@ public class RvcRepositoryIntegrationTest
     {
         Path repoDir = Files.createTempDirectory("rvc-checkout-history-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderEight", UUID.fromString("123e4567-e89b-12d3-a456-426614174009"));
-        RevCommit first = RvcRepository.commit(repoDir, "Branch Scoped History", "first structure".getBytes(StandardCharsets.UTF_8), player, null, "first");
-        RevCommit second = RvcRepository.commit(repoDir, "Branch Scoped History", "second structure".getBytes(StandardCharsets.UTF_8), player, first.getId(), "second");
+        RevCommit first = RvcRepository.commit(repoDir, "Branch Scoped History", createSingleBlockStructureTemplate("minecraft:stone"), player, null, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Branch Scoped History", createSingleBlockStructureTemplate("minecraft:dirt"), player, null, "second");
 
         List<String> branchHistory = RvcProjectService.listCommits(repoDir).stream().map(RvcProjectService.CommitInfo::id).toList();
 
@@ -287,6 +373,47 @@ public class RvcRepositoryIntegrationTest
 
         List<String> historyAfterRejectedCommit = RvcProjectService.listCommits(repoDir).stream().map(RvcProjectService.CommitInfo::id).toList();
         IntegrationTestSupport.assertEquals(List.of(second.getName(), first.getName()), historyAfterRejectedCommit, "branch history should stay on master after rejected detached commit");
+    }
+
+    private static void resetWorkingTreeToHeadDiscardsTrackedDirtyChanges() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-dirty-reset-");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderDirtyReset", UUID.fromString("123e4567-e89b-12d3-a456-426614174011"));
+        RevCommit commit = RvcRepository.commit(repoDir, "Dirty Reset", createSingleBlockStructureTemplate("minecraft:stone"), player, null, "init");
+        Path readme = repoDir.resolve(RvcRepository.README);
+        Path untracked = repoDir.resolve("local-notes.txt");
+
+        Files.writeString(readme, "local edits\n", StandardCharsets.UTF_8);
+        Files.writeString(untracked, "untracked local notes\n", StandardCharsets.UTF_8);
+
+        IntegrationTestSupport.assertTrue(RvcProjectService.hasUncommittedChanges(repoDir), "tracked local edits should be reported before reset");
+
+        RvcProjectService.resetWorkingTreeToHead(repoDir);
+
+        IntegrationTestSupport.assertTrue(RvcProjectService.hasUncommittedChanges(repoDir) == false, "reset should clean tracked local edits");
+        IntegrationTestSupport.assertEquals(commit.getId(), RvcRepository.resolveHead(repoDir), "reset should leave HEAD at the same commit");
+        IntegrationTestSupport.assertTrue(Files.readString(readme, StandardCharsets.UTF_8).contains("# Dirty Reset"), "README should be restored from HEAD");
+        IntegrationTestSupport.assertTrue(Files.exists(untracked), "reset to HEAD should leave untracked files alone");
+    }
+
+    private static void checkoutCanContinueAfterResettingDirtyWorkingTree() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-reset-checkout-");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderResetCheckout", UUID.fromString("123e4567-e89b-12d3-a456-426614174012"));
+        RevCommit first = RvcRepository.commit(repoDir, "Reset Checkout", createSingleBlockStructureTemplate("minecraft:stone"), player, null, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Reset Checkout", createSingleBlockStructureTemplate("minecraft:dirt"), player, null, "second");
+
+        Files.writeString(repoDir.resolve(RvcRepository.README), "local edits\n", StandardCharsets.UTF_8);
+
+        IntegrationTestSupport.assertTrue(RvcProjectService.hasUncommittedChanges(repoDir), "tracked local edits should be reported before checkout reset");
+
+        RvcProjectService.resetWorkingTreeToHead(repoDir);
+        RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
+
+        IntegrationTestSupport.assertTrue(RvcProjectService.hasUncommittedChanges(repoDir) == false, "checkout after reset should leave the working tree clean");
+        IntegrationTestSupport.assertEquals(first.getId(), RvcRepository.resolveHead(repoDir), "checkout after reset should move HEAD to the requested commit");
+        IntegrationTestSupport.assertTrue(second.getId().equals(RvcRepository.resolveHead(repoDir)) == false, "checkout after reset should not remain on the previous commit");
+        assertStructurePaletteContains(repoDir.resolve(RvcRepository.INDEX_STRUCTURE), "minecraft:stone");
     }
 
     private static Set<String> listTreeFiles(Repository repository, RevTree tree) throws Exception
@@ -336,7 +463,38 @@ public class RvcRepositoryIntegrationTest
         }
     }
 
+    private static void assertCommittedCoreFiles(Repository repository, RevCommit commit) throws Exception
+    {
+        Set<String> files = listTreeFiles(repository, commit.getTree());
+        IntegrationTestSupport.assertTrue(files.contains(RvcRepository.GITIGNORE), "commit should include .gitignore");
+        IntegrationTestSupport.assertTrue(files.contains(RvcRepository.README), "commit should include README.md");
+        IntegrationTestSupport.assertTrue(files.contains(RvcRepository.INDEX_JSON), "commit should include index.json");
+        IntegrationTestSupport.assertTrue(files.contains(RvcRepository.INDEX_STRUCTURE), "commit should include index.nbt");
+        IntegrationTestSupport.assertTrue(files.contains(RvcProjectService.LOCAL_JSON) == false, "commit must not include local.json");
+    }
+
+    private static void assertStructurePaletteContains(Path structureFile, String blockName) throws Exception
+    {
+        CompoundTag nbt = NbtIo.readCompressed(structureFile, NbtAccounter.unlimitedHeap());
+        ListTag palette = nbt.getListOrEmpty("palette");
+
+        for (int i = 0; i < palette.size(); i++)
+        {
+            if (palette.getCompoundOrEmpty(i).getStringOr("Name", "").equals(blockName))
+            {
+                return;
+            }
+        }
+
+        throw new AssertionError("expected structure palette to contain " + blockName);
+    }
+
     private static StructureTemplate createTinyStructureTemplate()
+    {
+        return createSingleBlockStructureTemplate("minecraft:stone");
+    }
+
+    private static StructureTemplate createSingleBlockStructureTemplate(String blockName)
     {
         SharedConstants.setVersion(DetectedVersion.BUILT_IN);
         Bootstrap.bootStrap();
@@ -349,9 +507,9 @@ public class RvcRepositoryIntegrationTest
         root.put("size", size);
 
         ListTag palette = new ListTag();
-        CompoundTag stone = new CompoundTag();
-        stone.putString("Name", "minecraft:stone");
-        palette.add(stone);
+        CompoundTag blockState = new CompoundTag();
+        blockState.putString("Name", blockName);
+        palette.add(blockState);
         root.put("palette", palette);
 
         ListTag blocks = new ListTag();

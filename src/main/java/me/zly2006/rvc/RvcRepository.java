@@ -1,6 +1,7 @@
 package me.zly2006.rvc;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,6 +19,9 @@ import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 public final class RvcRepository
@@ -56,12 +60,13 @@ public final class RvcRepository
         Objects.requireNonNull(message, "message");
         validateName(name);
         requireCommittableHead(directory);
+        validateStructureBytes(structureBytes);
 
         Files.createDirectories(directory);
         writeProjectMetadata(directory, name);
         Files.write(directory.resolve(INDEX_STRUCTURE), structureBytes);
 
-        return commitRvcRepository(directory, player, parent, message);
+        return commitRvcRepository(directory, player, message);
     }
 
     public static RevCommit commit(Path directory, String name, StructureTemplate structure, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
@@ -78,7 +83,7 @@ public final class RvcRepository
 
         RvcStructure.writeCompressed(structure, directory.resolve(INDEX_STRUCTURE));
 
-        return commitRvcRepository(directory, player, parent, message);
+        return commitRvcRepository(directory, player, message);
     }
 
     @Nullable
@@ -90,12 +95,13 @@ public final class RvcRepository
         }
     }
 
-    private static RevCommit commitRvcRepository(Path directory, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
+    private static RevCommit commitRvcRepository(Path directory, RvcPlayerIdentity player, String message) throws IOException, GitAPIException
     {
         try (Git git = openOrCreateGit(directory))
         {
             Repository repository = git.getRepository();
             requireCommittableHead(repository);
+            ObjectId parent = repository.resolve(Constants.HEAD);
 
             git.add()
                     .addFilepattern(INDEX_JSON)
@@ -131,6 +137,16 @@ public final class RvcRepository
         try (Repository repository = new FileRepositoryBuilder().setGitDir(directory.resolve(".git").toFile()).build())
         {
             requireCommittableHead(repository);
+        }
+    }
+
+    private static void validateStructureBytes(byte[] structureBytes) throws IOException
+    {
+        CompoundTag root = NbtIo.readCompressed(new ByteArrayInputStream(structureBytes), NbtAccounter.unlimitedHeap());
+
+        if (root.contains("size") == false || root.contains("palette") == false || root.contains("blocks") == false)
+        {
+            throw new IOException("RVC index.nbt must be a valid vanilla structure file");
         }
     }
 
