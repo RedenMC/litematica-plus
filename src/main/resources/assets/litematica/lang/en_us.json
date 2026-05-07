@@ -1123,6 +1123,7 @@
     "litematica.gui.button.rvc_project.back_to_manager": "Project manager",
     "litematica.gui.title.rvc_project_manager": "RVC Project Manager",
     "litematica.gui.title.rvc_project": "RVC Project: %s",
+    "litematica.gui.title.rvc_project.commit_message": "Commit message",
     "litematica.gui.title.rvc_project.remote_url": "Remote Git URL",
     "litematica.gui.label.rvc_project_manager.empty": "No RVC projects found in run/repos.",
     "litematica.gui.label.rvc_project.history": "Commit history",

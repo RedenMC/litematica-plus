@@ -62,16 +62,17 @@ public final class RvcProjectService
         return new Result(repositoryDirectory, commit.getName());
     }
 
-    public static RevCommit commitCurrentSelection(Path repositoryDirectory, String projectName, RvcPlayerIdentity player, Level world, AreaSelection selection, boolean ignoreEntities) throws Exception
+    public static RevCommit commitCurrentSelection(Path repositoryDirectory, String projectName, RvcPlayerIdentity player, Level world, AreaSelection selection, boolean ignoreEntities, String message) throws Exception
     {
         Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(selection, "selection");
+        Objects.requireNonNull(message, "message");
 
         ObjectId parent = RvcRepository.resolveHead(repositoryDirectory);
         SchematicaSchematic schematic = createSchematicFromSelection(world, selection, ignoreEntities);
-        return RvcRepository.commit(repositoryDirectory, projectName, schematic, player, parent, "commit " + COMMIT_TIME_FORMAT.format(Instant.now()));
+        return RvcRepository.commit(repositoryDirectory, projectName, schematic, player, parent, normalizeCommitMessage(message));
     }
 
     public static List<Project> listProjects(Path gameRunDirectory) throws IOException
@@ -230,6 +231,18 @@ public final class RvcProjectService
         }
 
         return repositoryName.trim();
+    }
+
+    private static String normalizeCommitMessage(String message)
+    {
+        String trimmed = message.trim();
+
+        if (trimmed.isEmpty())
+        {
+            throw new IllegalArgumentException("Commit message must not be blank");
+        }
+
+        return trimmed;
     }
 
     private static String toDirectoryName(String displayName)

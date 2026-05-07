@@ -1123,6 +1123,7 @@
     "litematica.gui.button.rvc_project.back_to_manager": "项目管理器",
     "litematica.gui.title.rvc_project_manager": "RVC项目管理器",
     "litematica.gui.title.rvc_project": "RVC项目：%s",
+    "litematica.gui.title.rvc_project.commit_message": "提交信息",
     "litematica.gui.title.rvc_project.remote_url": "远程Git URL",
     "litematica.gui.label.rvc_project_manager.empty": "run/repos 中没有找到RVC项目。",
     "litematica.gui.label.rvc_project.history": "提交历史",

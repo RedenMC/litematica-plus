@@ -131,7 +131,26 @@ public final class RvcRepository
     private static void writeProjectMetadata(Path directory, String name) throws IOException
     {
         Files.writeString(directory.resolve(INDEX_JSON), createIndexJson(name), StandardCharsets.UTF_8);
-        Files.writeString(directory.resolve(README), "# " + name + "\n\nCreated by RVC.\n", StandardCharsets.UTF_8);
+        Files.writeString(directory.resolve(README), createReadme(name), StandardCharsets.UTF_8);
+    }
+
+    private static String createReadme(String name)
+    {
+        return "# " + name + "\n\n" +
+                "Created by RVC.\n\n" +
+                "## About this project\n\n" +
+                "This repository stores a Minecraft schematic project managed by RVC. It is designed to make redstone contraptions, builds, and other schematic-based work easier to preserve, review, share, and collaborate on with standard Git tooling.\n\n" +
+                "RVC keeps the project files in a normal Git repository, so every saved version can become a commit with an author, message, timestamp, and complete file history. This makes the schematic easier to track over time and safer to publish to platforms such as GitHub.\n\n" +
+                "## Why use RVC\n\n" +
+                "- Version history: keep a clear timeline of meaningful schematic changes.\n" +
+                "- Collaboration: share the repository with other creators and review changes together.\n" +
+                "- Backup safety: push the project to a remote Git host so the work is not tied to one local world or computer.\n" +
+                "- Open workflow: use familiar Git commands and GitHub features without a custom storage format.\n" +
+                "- Reproducible releases: tag stable versions of a build before making larger experiments.\n\n" +
+                "## Project files\n\n" +
+                "- `index.schematic` contains the schematic data managed by RVC.\n" +
+                "- `index.json` stores RVC metadata such as the project name and repository format version.\n" +
+                "- `README.md` explains the purpose of this repository and the basic Git workflow.\n\n";
     }
 
     private static String createIndexJson(String name)

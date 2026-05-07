@@ -102,6 +102,11 @@ public class GuiRvcProject extends GuiBase
 
     private void commitCurrentSelection()
     {
+        GuiBase.openGui(new GuiTextInput(256, "litematica.gui.title.rvc_project.commit_message", "update schematic", this, new CommitMessageSetter(this)));
+    }
+
+    private void commitCurrentSelection(String message)
+    {
         Minecraft minecraft = Minecraft.getInstance();
         Player player = minecraft.player;
         Level world = minecraft.level;
@@ -129,7 +134,7 @@ public class GuiRvcProject extends GuiBase
         try
         {
             RvcPlayerIdentity identity = new RvcPlayerIdentity(player.getName().getString(), player.getUUID());
-            RvcProjectService.commitCurrentSelection(this.repositoryDirectory, this.projectName, identity, world, selection, false);
+            RvcProjectService.commitCurrentSelection(this.repositoryDirectory, this.projectName, identity, world, selection, false, message);
             this.refreshHistory();
             this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.committed");
         }
@@ -217,6 +222,22 @@ public class GuiRvcProject extends GuiBase
                 this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_project.push_failed", e.getMessage());
                 return false;
             }
+        }
+    }
+
+    private record CommitMessageSetter(GuiRvcProject gui) implements IStringConsumerFeedback
+    {
+        @Override
+        public boolean setString(String message)
+        {
+            if (message == null || message.isBlank())
+            {
+                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_project.commit_failed", "Commit message must not be blank");
+                return false;
+            }
+
+            this.gui.commitCurrentSelection(message);
+            return true;
         }
     }
 }
