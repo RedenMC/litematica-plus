@@ -10,11 +10,13 @@ import net.minecraft.world.level.Level;
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.selection.AreaSelection;
 import fi.dy.masa.malilib.gui.GuiBase;
+import fi.dy.masa.malilib.gui.GuiConfirmAction;
 import fi.dy.masa.malilib.gui.GuiTextInput;
 import fi.dy.masa.malilib.gui.Message.MessageType;
 import fi.dy.masa.malilib.gui.button.ButtonBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
 import fi.dy.masa.malilib.gui.button.IButtonActionListener;
+import fi.dy.masa.malilib.interfaces.IConfirmationListener;
 import fi.dy.masa.malilib.interfaces.ICompletionListener;
 import fi.dy.masa.malilib.interfaces.IStringConsumerFeedback;
 import fi.dy.masa.malilib.render.GuiContext;
@@ -137,7 +139,55 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
     private void promptCommitMessage()
     {
+        try
+        {
+            if (RvcProjectService.isDetachedHead(this.repositoryDirectory))
+            {
+                this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.commit_failed", StringUtils.translate("litematica.error.rvc_project.detached_head_commit"));
+                GuiConfirmAction gui = new GuiConfirmAction(
+                        420,
+                        "litematica.gui.title.rvc_project.detached_head_commit",
+                        new CheckoutMasterBeforeCommitListener(this),
+                        this,
+                        "litematica.gui.message.rvc_project.detached_head_commit",
+                        RvcProjectService.DEFAULT_BRANCH
+                );
+                GuiBase.openGui(gui);
+                return;
+            }
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.commit_failed", e.getMessage());
+            return;
+        }
+
         GuiBase.openGui(new GuiTextInput(256, "litematica.gui.title.rvc_project.commit_message", "update schematic", this, new CommitMessageSetter(this)));
+    }
+
+    private void checkoutMasterAndPromptCommitMessage()
+    {
+        Minecraft minecraft = Minecraft.getInstance();
+
+        if (minecraft.level == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        try
+        {
+            RvcProjectService.GameRestore restore = RvcProjectService.checkoutBranchToGame(this.repositoryDirectory, this.projectName, RvcProjectService.DEFAULT_BRANCH, minecraft.level, minecraft.level, this);
+            this.trackingOverlay = restore.overlay();
+            this.updateTrackingStatusAfterRestore();
+            this.initGui();
+            this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.checked_out_branch", RvcProjectService.DEFAULT_BRANCH, restore.boxCount());
+            GuiBase.openGui(new GuiTextInput(256, "litematica.gui.title.rvc_project.commit_message", "update schematic", this, new CommitMessageSetter(this)));
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.checkout_failed", e.getMessage());
+        }
     }
 
     private void commitStoredSelectionWithCurrentSelectionFallback(String message)
@@ -396,6 +446,22 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             }
 
             this.gui.commitStoredSelectionWithCurrentSelectionFallback(message);
+            return true;
+        }
+    }
+
+    private record CheckoutMasterBeforeCommitListener(GuiRvcProject gui) implements IConfirmationListener
+    {
+        @Override
+        public boolean onActionConfirmed()
+        {
+            this.gui.checkoutMasterAndPromptCommitMessage();
+            return true;
+        }
+
+        @Override
+        public boolean onActionCancelled()
+        {
             return true;
         }
     }

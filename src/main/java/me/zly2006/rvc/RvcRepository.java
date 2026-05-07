@@ -17,6 +17,7 @@ import org.eclipse.jgit.lib.RefUpdate;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
 public final class RvcRepository
@@ -54,6 +55,7 @@ public final class RvcRepository
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(message, "message");
         validateName(name);
+        requireCommittableHead(directory);
 
         Files.createDirectories(directory);
         writeProjectMetadata(directory, name);
@@ -69,6 +71,7 @@ public final class RvcRepository
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(message, "message");
         validateName(name);
+        requireCommittableHead(directory);
 
         Files.createDirectories(directory);
         writeProjectMetadata(directory, name);
@@ -92,6 +95,7 @@ public final class RvcRepository
         try (Git git = openOrCreateGit(directory))
         {
             Repository repository = git.getRepository();
+            requireCommittableHead(repository);
 
             git.add()
                     .addFilepattern(INDEX_JSON)
@@ -115,6 +119,36 @@ public final class RvcRepository
         {
             throw new IllegalArgumentException("RVC project name must not be blank");
         }
+    }
+
+    private static void requireCommittableHead(Path directory) throws IOException
+    {
+        if (Files.isDirectory(directory.resolve(".git")) == false)
+        {
+            return;
+        }
+
+        try (Repository repository = new FileRepositoryBuilder().setGitDir(directory.resolve(".git").toFile()).build())
+        {
+            requireCommittableHead(repository);
+        }
+    }
+
+    private static void requireCommittableHead(Repository repository) throws IOException
+    {
+        String fullBranch = repository.getFullBranch();
+
+        if (fullBranch != null && fullBranch.startsWith(Constants.R_HEADS))
+        {
+            return;
+        }
+
+        if (repository.resolve(Constants.HEAD) == null)
+        {
+            return;
+        }
+
+        throw new IOException("RVC commit is disabled while HEAD is detached. Checkout master before committing.");
     }
 
     private static Git openOrCreateGit(Path directory) throws GitAPIException, IOException

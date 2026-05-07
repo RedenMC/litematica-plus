@@ -1127,6 +1127,7 @@
     "litematica.gui.title.rvc_project_manager": "RVC项目管理器",
     "litematica.gui.title.rvc_project": "RVC项目：%s",
     "litematica.gui.title.rvc_project.commit_message": "提交信息",
+    "litematica.gui.title.rvc_project.detached_head_commit": "提交前检出 master？",
     "litematica.gui.title.rvc_project.remote_url": "远程Git URL",
     "litematica.gui.label.rvc_project_manager.empty": "run/repos 中没有找到RVC项目。",
     "litematica.gui.label.rvc_project.history": "提交历史",
@@ -1143,6 +1144,7 @@
     "litematica.error.rvc_project_manager.list_failed": "读取RVC项目列表失败：%s",
     "litematica.error.rvc_project.history_failed": "读取RVC提交历史失败：%s",
     "litematica.error.rvc_project.commit_failed": "RVC提交失败：%s",
+    "litematica.error.rvc_project.detached_head_commit": "检出提交后 HEAD 处于 detached 状态，新提交不会属于项目分支。",
     "litematica.error.rvc_project.push_failed": "RVC推送失败：%s",
     "litematica.error.rvc_project.pull_failed": "RVC拉取失败：%s",
     "litematica.error.rvc_project.checkout_failed": "RVC检出失败：%s",
@@ -1154,5 +1156,7 @@
     "litematica.message.rvc_project.update_areas_todo": "TODO",
     "litematica.message.rvc_project.inspect_commit": "%s：%s",
     "litematica.message.rvc_project.checked_out": "已检出 %s，并在游戏内恢复 %s 个追踪区域。",
+    "litematica.message.rvc_project.checked_out_branch": "已检出 %s，并在游戏内恢复 %s 个追踪区域。",
+    "litematica.gui.message.rvc_project.detached_head_commit": "检出提交后 HEAD 处于 detached 状态，RVC 无法安全提交。是否检出 %s 并在该分支上继续提交？",
     "modmenu.descriptionTranslation.litematica": "适用于LiteLoader、Rift、Fabric等的现代化的原理图投影Mod。"
 }

@@ -26,6 +26,7 @@ import org.eclipse.jgit.api.PullResult;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.revwalk.RevCommit;
@@ -53,6 +54,7 @@ public final class RvcProjectService
     public static final String LOCAL_JSON = "local.json";
     public static final String LOCAL_SELECTION_KEY = "local_selection";
     public static final String MASTER_ORIGIN_KEY = "master_origin";
+    public static final String DEFAULT_BRANCH = Constants.MASTER;
     public static final String DEFAULT_REMOTE_URL = "git@github.com:zly2006/rvc-v2-test.git";
 
     private static final String GIT_CONFIG_SECTION = "rvc";
@@ -330,6 +332,34 @@ public final class RvcProjectService
         }
     }
 
+    public static void checkoutBranchToWorkingTree(Path repositoryDirectory, String branchName) throws GitAPIException, IOException
+    {
+        Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
+        Objects.requireNonNull(branchName, "branchName");
+
+        if (branchName.isBlank())
+        {
+            throw new IllegalArgumentException("Branch name must not be blank");
+        }
+
+        try (Git git = Git.open(repositoryDirectory.toFile()))
+        {
+            git.checkout().setName(branchName.trim()).call();
+            rememberCurrentBranchForHistory(git.getRepository());
+        }
+    }
+
+    public static boolean isDetachedHead(Path repositoryDirectory) throws IOException
+    {
+        Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
+
+        try (Git git = Git.open(repositoryDirectory.toFile()))
+        {
+            String fullBranch = git.getRepository().getFullBranch();
+            return fullBranch == null || fullBranch.startsWith(Constants.R_HEADS) == false;
+        }
+    }
+
     public static GameRestore restoreWorkingTreeToGame(Path repositoryDirectory, String projectName, Level world, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws IOException
     {
         Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
@@ -356,6 +386,12 @@ public final class RvcProjectService
     public static GameRestore checkoutCommitToGame(Path repositoryDirectory, String projectName, String commitId, Level world, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws GitAPIException, IOException
     {
         checkoutCommitToWorkingTree(repositoryDirectory, commitId);
+        return restoreWorkingTreeToGame(repositoryDirectory, projectName, world, clientLevel, completionListener);
+    }
+
+    public static GameRestore checkoutBranchToGame(Path repositoryDirectory, String projectName, String branchName, Level world, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws GitAPIException, IOException
+    {
+        checkoutBranchToWorkingTree(repositoryDirectory, branchName);
         return restoreWorkingTreeToGame(repositoryDirectory, projectName, world, clientLevel, completionListener);
     }
 
@@ -676,9 +712,26 @@ public final class RvcProjectService
 
         String configuredBranch = repository.getConfig().getString(GIT_CONFIG_SECTION, null, GIT_CONFIG_HISTORY_BRANCH_KEY);
 
-        if (configuredBranch != null && configuredBranch.isBlank() == false)
+        if (configuredBranch != null && configuredBranch.isBlank() == false && repository.resolve(configuredBranch) != null)
         {
             return configuredBranch;
+        }
+
+        String defaultBranch = Constants.R_HEADS + DEFAULT_BRANCH;
+
+        if (repository.resolve(defaultBranch) != null)
+        {
+            rememberHistoryBranch(repository, defaultBranch);
+            return defaultBranch;
+        }
+
+        List<Ref> localBranches = repository.getRefDatabase().getRefsByPrefix(Constants.R_HEADS);
+
+        if (localBranches.isEmpty() == false)
+        {
+            String fallbackBranch = localBranches.get(0).getName();
+            rememberHistoryBranch(repository, fallbackBranch);
+            return fallbackBranch;
         }
 
         return Constants.HEAD;

@@ -1,5 +1,6 @@
 package me.zly2006.rvc;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,7 +48,7 @@ public class RvcRepositoryIntegrationTest
         IntegrationTestSupport.run("sub-regions are versioned in index json and master origin is local only", RvcRepositoryIntegrationTest::subRegionsAreVersionedInIndexJsonAndMasterOriginIsLocalOnly);
         IntegrationTestSupport.run("checkout updates the working tree while preserving visible history", RvcRepositoryIntegrationTest::checkoutUpdatesWorkingTreeWhilePreservingVisibleHistory);
         IntegrationTestSupport.run("commit history remains scoped to the branch after checkout", RvcRepositoryIntegrationTest::commitHistoryRemainsScopedToBranchAfterCheckout);
-        IntegrationTestSupport.run("commit after checkout uses checked out commit as parent", RvcRepositoryIntegrationTest::commitAfterCheckoutUsesCheckedOutCommitAsParent);
+        IntegrationTestSupport.run("commit after checkout is rejected while HEAD is detached", RvcRepositoryIntegrationTest::commitAfterCheckoutIsRejectedWhileHeadIsDetached);
     }
 
     private static void commitUsesSuppliedParentAndHistoryListsNewestFirst() throws Exception
@@ -248,23 +249,30 @@ public class RvcRepositoryIntegrationTest
         List<String> branchHistory = RvcProjectService.listCommits(repoDir).stream().map(RvcProjectService.CommitInfo::id).toList();
 
         RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
-        RevCommit detached = RvcRepository.commit(repoDir, "Branch Scoped History", "detached structure".getBytes(StandardCharsets.UTF_8), player, RvcRepository.resolveHead(repoDir), "detached experiment");
 
         List<String> historyAfterDetachedCommit = RvcProjectService.listCommits(repoDir).stream().map(RvcProjectService.CommitInfo::id).toList();
         IntegrationTestSupport.assertEquals(branchHistory, historyAfterDetachedCommit, "history should stay scoped to the branch selected before checkout");
         IntegrationTestSupport.assertTrue(historyAfterDetachedCommit.contains(second.getName()), "branch tip should remain visible");
-        IntegrationTestSupport.assertTrue(historyAfterDetachedCommit.contains(detached.getName()) == false, "detached checkout commits must not appear in branch history");
     }
 
-    private static void commitAfterCheckoutUsesCheckedOutCommitAsParent() throws Exception
+    private static void commitAfterCheckoutIsRejectedWhileHeadIsDetached() throws Exception
     {
         Path repoDir = Files.createTempDirectory("rvc-checkout-commit-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderSeven", UUID.fromString("123e4567-e89b-12d3-a456-426614174008"));
         RevCommit first = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, null, "first");
-        RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, first.getId(), "second");
+        RevCommit second = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, first.getId(), "second");
 
         RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
-        RevCommit afterCheckout = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, RvcRepository.resolveHead(repoDir), "after checkout");
+
+        try
+        {
+            RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, RvcRepository.resolveHead(repoDir), "after checkout");
+            throw new AssertionError("commit should fail while HEAD is detached");
+        }
+        catch (IOException e)
+        {
+            IntegrationTestSupport.assertTrue(e.getMessage().contains("HEAD is detached"), "detached HEAD commit error should explain the reason");
+        }
 
         try (Git git = Git.open(repoDir.toFile()))
         {
@@ -273,10 +281,12 @@ public class RvcRepositoryIntegrationTest
             try (RevWalk revWalk = new RevWalk(repository))
             {
                 RevCommit parsed = revWalk.parseCommit(repository.resolve(Constants.HEAD));
-                IntegrationTestSupport.assertEquals(afterCheckout.getId(), parsed.getId(), "detached HEAD should move to the new commit");
-                IntegrationTestSupport.assertEquals(first.getId(), parsed.getParent(0).getId(), "new detached commit should parent the checked-out commit");
+                IntegrationTestSupport.assertEquals(first.getId(), parsed.getId(), "detached HEAD should stay on the checked-out commit after rejected commit");
             }
         }
+
+        List<String> historyAfterRejectedCommit = RvcProjectService.listCommits(repoDir).stream().map(RvcProjectService.CommitInfo::id).toList();
+        IntegrationTestSupport.assertEquals(List.of(second.getName(), first.getName()), historyAfterRejectedCommit, "branch history should stay on master after rejected detached commit");
     }
 
     private static Set<String> listTreeFiles(Repository repository, RevTree tree) throws Exception

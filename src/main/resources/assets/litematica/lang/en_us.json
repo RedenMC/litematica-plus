@@ -1127,6 +1127,7 @@
     "litematica.gui.title.rvc_project_manager": "RVC Project Manager",
     "litematica.gui.title.rvc_project": "RVC Project: %s",
     "litematica.gui.title.rvc_project.commit_message": "Commit message",
+    "litematica.gui.title.rvc_project.detached_head_commit": "Checkout master before commit?",
     "litematica.gui.title.rvc_project.remote_url": "Remote Git URL",
     "litematica.gui.label.rvc_project_manager.empty": "No RVC projects found in run/repos.",
     "litematica.gui.label.rvc_project.history": "Commit history",
@@ -1143,6 +1144,7 @@
     "litematica.error.rvc_project_manager.list_failed": "Failed to list RVC projects: %s",
     "litematica.error.rvc_project.history_failed": "Failed to read RVC commit history: %s",
     "litematica.error.rvc_project.commit_failed": "RVC commit failed: %s",
+    "litematica.error.rvc_project.detached_head_commit": "HEAD is detached after checkout, so a new commit would not belong to the project branch.",
     "litematica.error.rvc_project.push_failed": "RVC push failed: %s",
     "litematica.error.rvc_project.pull_failed": "RVC pull failed: %s",
     "litematica.error.rvc_project.checkout_failed": "RVC checkout failed: %s",
@@ -1154,5 +1156,7 @@
     "litematica.message.rvc_project.update_areas_todo": "TODO",
     "litematica.message.rvc_project.inspect_commit": "%s: %s",
     "litematica.message.rvc_project.checked_out": "Checked out %s and restored %s tracked region(s) in-game.",
+    "litematica.message.rvc_project.checked_out_branch": "Checked out %s and restored %s tracked region(s) in-game.",
+    "litematica.gui.message.rvc_project.detached_head_commit": "HEAD is detached after checkout, so RVC cannot commit safely. Checkout %s and continue committing there?",
     "modmenu.descriptionTranslation.litematica": "A modern schematic mod for LiteLoader, Rift, Fabric etc."
 }
