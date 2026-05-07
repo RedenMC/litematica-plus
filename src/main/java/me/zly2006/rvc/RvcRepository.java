@@ -38,21 +38,15 @@ public final class RvcRepository
 
     public static RevCommit init(Path directory, String name, byte[] structureBytes, RvcPlayerIdentity player) throws IOException, GitAPIException
     {
-        return commit(directory, name, structureBytes, player, null, "init");
-    }
-
-    public static RevCommit initFromSavedStructure(Path directory, String name, Path structureFile, RvcPlayerIdentity player) throws IOException, GitAPIException
-    {
-        Objects.requireNonNull(structureFile, "structureFile");
-        return init(directory, name, Files.readAllBytes(structureFile), player);
+        return commit(directory, name, structureBytes, player, "init");
     }
 
     public static RevCommit init(Path directory, String name, StructureTemplate structure, RvcPlayerIdentity player) throws IOException, GitAPIException
     {
-        return commit(directory, name, structure, player, null, "init");
+        return commit(directory, name, structure, player, "init");
     }
 
-    public static RevCommit commit(Path directory, String name, byte[] structureBytes, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
+    public static RevCommit commit(Path directory, String name, byte[] structureBytes, RvcPlayerIdentity player, String message) throws IOException, GitAPIException
     {
         Objects.requireNonNull(directory, "directory");
         Objects.requireNonNull(structureBytes, "structureBytes");
@@ -69,7 +63,7 @@ public final class RvcRepository
         return commitRvcRepository(directory, player, message);
     }
 
-    public static RevCommit commit(Path directory, String name, StructureTemplate structure, RvcPlayerIdentity player, @Nullable ObjectId parent, String message) throws IOException, GitAPIException
+    public static RevCommit commit(Path directory, String name, StructureTemplate structure, RvcPlayerIdentity player, String message) throws IOException, GitAPIException
     {
         Objects.requireNonNull(directory, "directory");
         Objects.requireNonNull(structure, "structure");

@@ -78,9 +78,9 @@ public class RvcRepositoryIntegrationTest
         Path repoDir = Files.createTempDirectory("rvc-commit-parent-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderThree", UUID.fromString("123e4567-e89b-12d3-a456-426614174004"));
 
-        RevCommit first = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, null, "init");
-        RevCommit second = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, null, "update from world");
-        RevCommit third = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, first.getId(), "ignore stale supplied parent");
+        RevCommit first = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, "init");
+        RevCommit second = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, "update from world");
+        RevCommit third = RvcRepository.commit(repoDir, "Parent Driven", createTinyStructureTemplate(), player, "ignore stale supplied parent");
 
         try (Git git = Git.open(repoDir.toFile()))
         {
@@ -110,7 +110,7 @@ public class RvcRepositoryIntegrationTest
         Path invalidRepo = reposDir.resolve("Not Git");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderFour", UUID.fromString("123e4567-e89b-12d3-a456-426614174005"));
 
-        RevCommit commit = RvcRepository.commit(validRepo, "Valid Project", createTinyStructureTemplate(), player, null, "init");
+        RevCommit commit = RvcRepository.commit(validRepo, "Valid Project", createTinyStructureTemplate(), player, "init");
         Files.createDirectories(invalidRepo);
 
         List<RvcProjectService.Project> projects = RvcProjectService.listProjects(runDir);
@@ -138,8 +138,8 @@ public class RvcRepositoryIntegrationTest
     {
         Path repoDir = Files.createTempDirectory("rvc-detached-push-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderDetachedPush", UUID.fromString("123e4567-e89b-12d3-a456-426614174013"));
-        RevCommit first = RvcRepository.commit(repoDir, "Detached Push", createSingleBlockStructureTemplate("minecraft:stone"), player, null, "first");
-        RevCommit second = RvcRepository.commit(repoDir, "Detached Push", createSingleBlockStructureTemplate("minecraft:dirt"), player, null, "second");
+        RevCommit first = RvcRepository.commit(repoDir, "Detached Push", createSingleBlockStructureTemplate("minecraft:stone"), player, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Detached Push", createSingleBlockStructureTemplate("minecraft:dirt"), player, "second");
 
         RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
 
@@ -211,7 +211,7 @@ public class RvcRepositoryIntegrationTest
         AreaSelection selection = createAreaSelectionFromJson("Stored Selection");
 
         RvcProjectService.writeLocalSelection(repoDir, selection);
-        RvcRepository.commit(repoDir, "Local Selection", createTinyStructureTemplate(), new RvcPlayerIdentity("BuilderFive", UUID.fromString("123e4567-e89b-12d3-a456-426614174006")), null, "init");
+        RvcRepository.commit(repoDir, "Local Selection", createTinyStructureTemplate(), new RvcPlayerIdentity("BuilderFive", UUID.fromString("123e4567-e89b-12d3-a456-426614174006")), "init");
 
         IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcProjectService.LOCAL_JSON), "\"local_selection\"");
         IntegrationTestSupport.assertFileContains(repoDir.resolve(".gitignore"), "/local.json");
@@ -310,8 +310,8 @@ public class RvcRepositoryIntegrationTest
     {
         Path repoDir = Files.createTempDirectory("rvc-checkout-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderSix", UUID.fromString("123e4567-e89b-12d3-a456-426614174007"));
-        RevCommit first = RvcRepository.commit(repoDir, "Checkout Project", createSingleBlockStructureTemplate("minecraft:stone"), player, null, "first");
-        RevCommit second = RvcRepository.commit(repoDir, "Checkout Project", createSingleBlockStructureTemplate("minecraft:dirt"), player, null, "second");
+        RevCommit first = RvcRepository.commit(repoDir, "Checkout Project", createSingleBlockStructureTemplate("minecraft:stone"), player, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Checkout Project", createSingleBlockStructureTemplate("minecraft:dirt"), player, "second");
 
         List<RvcProjectService.CommitInfo> branchHistoryBeforeCheckout = RvcProjectService.listCommits(repoDir);
         RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
@@ -329,8 +329,8 @@ public class RvcRepositoryIntegrationTest
     {
         Path repoDir = Files.createTempDirectory("rvc-checkout-history-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderEight", UUID.fromString("123e4567-e89b-12d3-a456-426614174009"));
-        RevCommit first = RvcRepository.commit(repoDir, "Branch Scoped History", createSingleBlockStructureTemplate("minecraft:stone"), player, null, "first");
-        RevCommit second = RvcRepository.commit(repoDir, "Branch Scoped History", createSingleBlockStructureTemplate("minecraft:dirt"), player, null, "second");
+        RevCommit first = RvcRepository.commit(repoDir, "Branch Scoped History", createSingleBlockStructureTemplate("minecraft:stone"), player, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Branch Scoped History", createSingleBlockStructureTemplate("minecraft:dirt"), player, "second");
 
         List<String> branchHistory = RvcProjectService.listCommits(repoDir).stream().map(RvcProjectService.CommitInfo::id).toList();
 
@@ -345,8 +345,8 @@ public class RvcRepositoryIntegrationTest
     {
         Path repoDir = Files.createTempDirectory("rvc-checkout-commit-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderSeven", UUID.fromString("123e4567-e89b-12d3-a456-426614174008"));
-        RevCommit first = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, null, "first");
-        RevCommit second = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, first.getId(), "second");
+        RevCommit first = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, "second");
 
         RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
 
@@ -379,7 +379,7 @@ public class RvcRepositoryIntegrationTest
     {
         Path repoDir = Files.createTempDirectory("rvc-dirty-reset-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderDirtyReset", UUID.fromString("123e4567-e89b-12d3-a456-426614174011"));
-        RevCommit commit = RvcRepository.commit(repoDir, "Dirty Reset", createSingleBlockStructureTemplate("minecraft:stone"), player, null, "init");
+        RevCommit commit = RvcRepository.commit(repoDir, "Dirty Reset", createSingleBlockStructureTemplate("minecraft:stone"), player, "init");
         Path readme = repoDir.resolve(RvcRepository.README);
         Path untracked = repoDir.resolve("local-notes.txt");
 
@@ -400,8 +400,8 @@ public class RvcRepositoryIntegrationTest
     {
         Path repoDir = Files.createTempDirectory("rvc-reset-checkout-");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderResetCheckout", UUID.fromString("123e4567-e89b-12d3-a456-426614174012"));
-        RevCommit first = RvcRepository.commit(repoDir, "Reset Checkout", createSingleBlockStructureTemplate("minecraft:stone"), player, null, "first");
-        RevCommit second = RvcRepository.commit(repoDir, "Reset Checkout", createSingleBlockStructureTemplate("minecraft:dirt"), player, null, "second");
+        RevCommit first = RvcRepository.commit(repoDir, "Reset Checkout", createSingleBlockStructureTemplate("minecraft:stone"), player, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Reset Checkout", createSingleBlockStructureTemplate("minecraft:dirt"), player, "second");
 
         Files.writeString(repoDir.resolve(RvcRepository.README), "local edits\n", StandardCharsets.UTF_8);
 

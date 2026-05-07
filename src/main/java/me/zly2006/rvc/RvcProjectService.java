@@ -87,7 +87,7 @@ public final class RvcProjectService
         writeProjectMetadataWithSubRegions(repositoryDirectory, displayName, selection);
 
         StructureTemplate structure = createStructureFromSelectionBoxes(world, getValidBoxes(selection), ignoreEntities);
-        RevCommit commit = RvcRepository.commit(repositoryDirectory, displayName, structure, player, null, "init");
+        RevCommit commit = RvcRepository.commit(repositoryDirectory, displayName, structure, player, "init");
 
         return new Result(repositoryDirectory, commit.getName());
     }
@@ -100,7 +100,7 @@ public final class RvcProjectService
         Objects.requireNonNull(message, "message");
 
         StructureTemplate structure = createStructureFromIndexSubRegionsOrFallbackToCurrentPositionUtilsGetValidBoxes(repositoryDirectory, world, currentSelectionFallback, ignoreEntities);
-        return RvcRepository.commit(repositoryDirectory, projectName, structure, player, null, normalizeCommitMessage(message));
+        return RvcRepository.commit(repositoryDirectory, projectName, structure, player, normalizeCommitMessage(message));
     }
 
     public static void writeProjectMetadataWithSubRegions(Path repositoryDirectory, String projectName, AreaSelection selection) throws IOException
