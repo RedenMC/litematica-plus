@@ -42,6 +42,7 @@ import fi.dy.masa.litematica.schematic.container.LitematicaBlockStateContainer;
 import fi.dy.masa.litematica.schematic.conversion.SchematicConversionFixers.IStateFixer;
 import fi.dy.masa.litematica.schematic.conversion.SchematicConversionMaps;
 import fi.dy.masa.litematica.schematic.conversion.SchematicConverter;
+import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.litematica.util.*;
 import fi.dy.masa.litematica.world.ChunkSchematic;
 import fi.dy.masa.litematica.world.ChunkSchematicState;
@@ -100,6 +101,88 @@ public class SchematicaSchematic
         }
 
         return entityList;
+    }
+
+    public void maskOutsideWorldBoxes(BlockPos schematicWorldOrigin, List<Box> worldBoxes)
+    {
+        Objects.requireNonNull(schematicWorldOrigin, "schematicWorldOrigin");
+        Objects.requireNonNull(worldBoxes, "worldBoxes");
+
+        final int width = this.size.getX();
+        final int height = this.size.getY();
+        final int length = this.size.getZ();
+        final int numBlocks = width * height * length;
+
+        if (this.blocks == null || numBlocks <= 0 || this.blocks.getSize().equals(this.size) == false)
+        {
+            return;
+        }
+
+        if (worldBoxes.isEmpty())
+        {
+            this.tiles.clear();
+            this.entities.clear();
+        }
+
+        BlockPos.MutableBlockPos worldPos = new BlockPos.MutableBlockPos();
+
+        for (int y = 0; y < height; ++y)
+        {
+            for (int z = 0; z < length; ++z)
+            {
+                for (int x = 0; x < width; ++x)
+                {
+                    worldPos.set(schematicWorldOrigin.getX() + x, schematicWorldOrigin.getY() + y, schematicWorldOrigin.getZ() + z);
+
+                    if (isInsideAnyBox(worldPos, worldBoxes) == false)
+                    {
+                        this.blocks.set(x, y, z, Blocks.AIR.defaultBlockState());
+                        this.tiles.remove(new BlockPos(x, y, z));
+                    }
+                }
+            }
+        }
+
+        this.entities.removeIf(entityData -> isEntityInsideAnyBox(entityData, worldBoxes) == false);
+    }
+
+    private static boolean isEntityInsideAnyBox(CompoundTag entityData, List<Box> worldBoxes)
+    {
+        Vec3 pos = NbtUtils.getVec3dCodec(entityData, "Pos");
+
+        if (pos == null)
+        {
+            return false;
+        }
+
+        BlockPos blockPos = BlockPos.containing(pos);
+        return isInsideAnyBox(blockPos, worldBoxes);
+    }
+
+    private static boolean isInsideAnyBox(BlockPos pos, List<Box> boxes)
+    {
+        for (Box box : boxes)
+        {
+            BlockPos pos1 = box.getPos1();
+            BlockPos pos2 = box.getPos2();
+
+            if (pos1 == null || pos2 == null)
+            {
+                continue;
+            }
+
+            BlockPos min = PositionUtils.getMinCorner(pos1, pos2);
+            BlockPos max = PositionUtils.getMaxCorner(pos1, pos2);
+
+            if (pos.getX() >= min.getX() && pos.getX() <= max.getX() &&
+                pos.getY() >= min.getY() && pos.getY() <= max.getY() &&
+                pos.getZ() >= min.getZ() && pos.getZ() <= max.getZ())
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public void placeSchematicToWorld(Level world, BlockPos posStart, StructurePlaceSettings placement, int setBlockStateFlags)
@@ -182,6 +265,123 @@ public class SchematicaSchematic
                             BlockPos pos = new BlockPos(x, y, z);
                             CompoundTag teNBT = this.tiles.get(pos);
 
+                            pos = StructureTemplate.calculateRelativePosition(placement, pos).offset(posStart);
+                            world.updateNeighborsAt(pos, world.getBlockState(pos).getBlock());
+
+                            if (teNBT != null)
+                            {
+                                BlockEntity te = world.getBlockEntity(pos);
+
+                                if (te != null)
+                                {
+                                    te.setChanged();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (placement.isIgnoreEntities() == false)
+            {
+                this.addEntitiesToWorld(world, posStart, placement);
+            }
+        }
+    }
+
+    public void placeSchematicToWorldBoxes(Level world, BlockPos posStart, StructurePlaceSettings placement, int setBlockStateFlags, List<Box> worldBoxes)
+    {
+        Objects.requireNonNull(worldBoxes, "worldBoxes");
+
+        final int width = this.size.getX();
+        final int height = this.size.getY();
+        final int length = this.size.getZ();
+        final int numBlocks = width * height * length;
+
+        if (this.blocks != null && numBlocks > 0 && this.blocks.getSize().equals(this.size))
+        {
+            final Rotation rotation = placement.getRotation();
+            final Mirror mirror = placement.getMirror();
+
+            for (int y = 0; y < height; ++y)
+            {
+                for (int z = 0; z < length; ++z)
+                {
+                    for (int x = 0; x < width; ++x)
+                    {
+                        BlockPos pos = new BlockPos(x, y, z);
+                        BlockPos worldPos = pos.offset(posStart);
+
+                        if (isInsideAnyBox(worldPos, worldBoxes) == false)
+                        {
+                            continue;
+                        }
+
+                        BlockState state = this.blocks.get(x, y, z);
+                        CompoundTag teNBT = this.tiles.get(pos);
+
+                        pos = StructureTemplate.calculateRelativePosition(placement, pos).offset(posStart);
+
+                        state = state.mirror(mirror);
+                        state = state.rotate(rotation);
+
+                        if (teNBT != null)
+                        {
+                            BlockEntity te = world.getBlockEntity(pos);
+
+                            if (te != null)
+                            {
+                                if (te instanceof Container)
+                                {
+                                    ((Container) te).clearContent();
+                                }
+
+                                world.setBlock(pos, Blocks.BARRIER.defaultBlockState(), 0x14);
+                            }
+                        }
+
+                        if (world.setBlock(pos, state, setBlockStateFlags) && teNBT != null)
+                        {
+                            BlockEntity te = world.getBlockEntity(pos);
+
+                            if (te != null)
+                            {
+                                teNBT.putInt("x", pos.getX());
+                                teNBT.putInt("y", pos.getY());
+                                teNBT.putInt("z", pos.getZ());
+
+                                try
+                                {
+                                    NbtView view = NbtView.getReader(teNBT, world.registryAccess());
+                                    te.loadWithComponents(view.getReader());
+                                }
+                                catch (Exception e)
+                                {
+                                    Litematica.LOGGER.warn("Failed to load TileEntity data for {} @ {}", state, pos);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if ((setBlockStateFlags & 0x01) != 0)
+            {
+                for (int y = 0; y < height; ++y)
+                {
+                    for (int z = 0; z < length; ++z)
+                    {
+                        for (int x = 0; x < width; ++x)
+                        {
+                            BlockPos pos = new BlockPos(x, y, z);
+                            BlockPos worldPos = pos.offset(posStart);
+
+                            if (isInsideAnyBox(worldPos, worldBoxes) == false)
+                            {
+                                continue;
+                            }
+
+                            CompoundTag teNBT = this.tiles.get(pos);
                             pos = StructureTemplate.calculateRelativePosition(placement, pos).offset(posStart);
                             world.updateNeighborsAt(pos, world.getBlockState(pos).getBlock());
 

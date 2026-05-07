@@ -29,6 +29,7 @@ import org.eclipse.jgit.treewalk.TreeWalk;
 import fi.dy.masa.litematica.schematic.SchematicaSchematic;
 import fi.dy.masa.litematica.schematic.container.LitematicaBlockStateContainer;
 import fi.dy.masa.litematica.selection.AreaSelection;
+import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.malilib.util.data.json.JsonUtils;
 import fi.dy.masa.malilib.util.nbt.NbtUtils;
 
@@ -41,6 +42,10 @@ public class RvcRepositoryIntegrationTest
         IntegrationTestSupport.run("commit uses the supplied parent and history lists newest commits first", RvcRepositoryIntegrationTest::commitUsesSuppliedParentAndHistoryListsNewestFirst);
         IntegrationTestSupport.run("project service lists valid repositories and pushes to a remote", RvcRepositoryIntegrationTest::projectServiceListsValidRepositoriesAndPushesToRemote);
         IntegrationTestSupport.run("local selection is stored in local.json and ignored by Git", RvcRepositoryIntegrationTest::localSelectionIsStoredInLocalJsonAndIgnoredByGit);
+        IntegrationTestSupport.run("sub-regions are versioned in index json and master origin is local only", RvcRepositoryIntegrationTest::subRegionsAreVersionedInIndexJsonAndMasterOriginIsLocalOnly);
+        IntegrationTestSupport.run("schematica export masks blocks outside tracked sub-regions", RvcRepositoryIntegrationTest::schematicaExportMasksBlocksOutsideTrackedSubRegions);
+        IntegrationTestSupport.run("checkout updates the working tree while preserving visible history", RvcRepositoryIntegrationTest::checkoutUpdatesWorkingTreeWhilePreservingVisibleHistory);
+        IntegrationTestSupport.run("commit after checkout uses checked out commit as parent", RvcRepositoryIntegrationTest::commitAfterCheckoutUsesCheckedOutCommitAsParent);
     }
 
     private static void commitUsesSuppliedParentAndHistoryListsNewestFirst() throws Exception
@@ -175,6 +180,25 @@ public class RvcRepositoryIntegrationTest
         }
     }
 
+    private static void subRegionsAreVersionedInIndexJsonAndMasterOriginIsLocalOnly() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-index-subregions-");
+        AreaSelection selection = createAreaSelectionFromJson("Relative Selection");
+
+        RvcProjectService.writeProjectMetadataWithSubRegions(repoDir, "Relative Project", selection);
+
+        IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcRepository.INDEX_JSON), "\"sub_regions\"");
+        IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcRepository.INDEX_JSON), "\"name\": \"main\"");
+        IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcRepository.INDEX_JSON), "\"pos1\": [");
+        IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcProjectService.LOCAL_JSON), "\"master_origin\"");
+        IntegrationTestSupport.assertTrue(Files.readString(repoDir.resolve(RvcRepository.INDEX_JSON)).contains("master_origin") == false, "master origin must not be versioned in index.json");
+
+        AreaSelection restored = RvcProjectService.readProjectAreaSelection(repoDir);
+        IntegrationTestSupport.assertNotNull(restored, "index/local should restore project area selection");
+        IntegrationTestSupport.assertEquals("Relative Project", restored.getName(), "restored project selection name");
+        IntegrationTestSupport.assertEquals(1, restored.getAllSubRegionBoxes().size(), "restored sub-region count");
+    }
+
     private static AreaSelection createAreaSelectionFromJson(String name)
     {
         JsonObject selection = new JsonObject();
@@ -191,6 +215,71 @@ public class RvcRepositoryIntegrationTest
         selection.add("boxes", boxes);
 
         return AreaSelection.fromJson(selection);
+    }
+
+    private static void schematicaExportMasksBlocksOutsideTrackedSubRegions() throws Exception
+    {
+        SchematicaSchematic schematic = createLineSchematicaSchematic(3);
+        Box first = createBox("first", new BlockPos(10, 64, 10), new BlockPos(10, 64, 10));
+        Box third = createBox("third", new BlockPos(12, 64, 10), new BlockPos(12, 64, 10));
+
+        schematic.maskOutsideWorldBoxes(new BlockPos(10, 64, 10), List.of(first, third));
+
+        net.minecraft.nbt.CompoundTag nbt = schematic.writeToNBT();
+        byte[] blocks = nbt.getByteArray("Blocks").orElse(new byte[0]);
+
+        IntegrationTestSupport.assertEquals((byte) 1, blocks[0], "first tracked block should remain stone");
+        IntegrationTestSupport.assertEquals((byte) 0, blocks[1], "middle untracked block should be masked to air");
+        IntegrationTestSupport.assertEquals((byte) 1, blocks[2], "third tracked block should remain stone");
+    }
+
+    private static void checkoutUpdatesWorkingTreeWhilePreservingVisibleHistory() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-checkout-");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderSix", UUID.fromString("123e4567-e89b-12d3-a456-426614174007"));
+        RevCommit first = RvcRepository.commit(repoDir, "Checkout Project", "first schematic".getBytes(StandardCharsets.UTF_8), player, null, "first");
+        RevCommit second = RvcRepository.commit(repoDir, "Checkout Project", "second schematic".getBytes(StandardCharsets.UTF_8), player, first.getId(), "second");
+
+        RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
+
+        IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcRepository.INDEX_SCHEMATIC), "first schematic");
+        IntegrationTestSupport.assertEquals(first.getId(), RvcRepository.resolveHead(repoDir), "checkout should move HEAD to the selected commit");
+
+        List<RvcProjectService.CommitInfo> history = RvcProjectService.listCommits(repoDir);
+        IntegrationTestSupport.assertTrue(history.stream().anyMatch(commit -> commit.id().equals(first.getName())), "history should still show checked-out commit");
+        IntegrationTestSupport.assertTrue(history.stream().anyMatch(commit -> commit.id().equals(second.getName())), "history should still show branch commits after detached checkout");
+    }
+
+    private static void commitAfterCheckoutUsesCheckedOutCommitAsParent() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-checkout-commit-");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderSeven", UUID.fromString("123e4567-e89b-12d3-a456-426614174008"));
+        RevCommit first = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinySchematicaSchematic(), player, null, "first");
+        RvcRepository.commit(repoDir, "Checkout Commit Project", createTinySchematicaSchematic(), player, first.getId(), "second");
+
+        RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
+        RevCommit afterCheckout = RvcRepository.commit(repoDir, "Checkout Commit Project", createTinySchematicaSchematic(), player, RvcRepository.resolveHead(repoDir), "after checkout");
+
+        try (Git git = Git.open(repoDir.toFile()))
+        {
+            Repository repository = git.getRepository();
+
+            try (RevWalk revWalk = new RevWalk(repository))
+            {
+                RevCommit parsed = revWalk.parseCommit(repository.resolve(Constants.HEAD));
+                IntegrationTestSupport.assertEquals(afterCheckout.getId(), parsed.getId(), "detached HEAD should move to the new commit");
+                IntegrationTestSupport.assertEquals(first.getId(), parsed.getParent(0).getId(), "new detached commit should parent the checked-out commit");
+            }
+        }
+    }
+
+    private static Box createBox(String name, BlockPos pos1, BlockPos pos2)
+    {
+        Box box = new Box();
+        box.setName(name);
+        box.setPos1(pos1);
+        box.setPos2(pos2);
+        return box;
     }
 
     private static Set<String> listTreeFiles(Repository repository, RevTree tree) throws Exception
@@ -241,14 +330,23 @@ public class RvcRepositoryIntegrationTest
 
     private static SchematicaSchematic createTinySchematicaSchematic() throws Exception
     {
+        return createLineSchematicaSchematic(1);
+    }
+
+    private static SchematicaSchematic createLineSchematicaSchematic(int width) throws Exception
+    {
         SharedConstants.setVersion(DetectedVersion.BUILT_IN);
         Bootstrap.bootStrap();
 
         Constructor<SchematicaSchematic> constructor = SchematicaSchematic.class.getDeclaredConstructor();
         constructor.setAccessible(true);
         SchematicaSchematic schematic = constructor.newInstance();
-        LitematicaBlockStateContainer container = new LitematicaBlockStateContainer(1, 1, 1);
-        container.set(0, 0, 0, Blocks.STONE.defaultBlockState());
+        LitematicaBlockStateContainer container = new LitematicaBlockStateContainer(width, 1, 1);
+
+        for (int x = 0; x < width; x++)
+        {
+            container.set(x, 0, 0, Blocks.STONE.defaultBlockState());
+        }
 
         Field blocksField = SchematicaSchematic.class.getDeclaredField("blocks");
         blocksField.setAccessible(true);
@@ -256,7 +354,7 @@ public class RvcRepositoryIntegrationTest
 
         Field sizeField = SchematicaSchematic.class.getDeclaredField("size");
         sizeField.setAccessible(true);
-        sizeField.set(schematic, new BlockPos(1, 1, 1));
+        sizeField.set(schematic, new BlockPos(width, 1, 1));
 
         return schematic;
     }

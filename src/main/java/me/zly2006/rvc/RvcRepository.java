@@ -132,7 +132,11 @@ public final class RvcRepository
 
     private static void writeProjectMetadata(Path directory, String name) throws IOException
     {
-        Files.writeString(directory.resolve(INDEX_JSON), createIndexJson(name), StandardCharsets.UTF_8);
+        if (Files.isRegularFile(directory.resolve(INDEX_JSON)) == false)
+        {
+            Files.writeString(directory.resolve(INDEX_JSON), createIndexJson(name), StandardCharsets.UTF_8);
+        }
+
         Files.writeString(directory.resolve(README), createReadme(name), StandardCharsets.UTF_8);
         Files.writeString(directory.resolve(GITIGNORE), "/" + RvcProjectService.LOCAL_JSON + "\n", StandardCharsets.UTF_8);
     }
@@ -236,7 +240,9 @@ public final class RvcRepository
 
     private static void updateHead(Repository repository, ObjectId commitId, PersonIdent identity, @Nullable ObjectId parent, String message) throws IOException
     {
-        RefUpdate refUpdate = repository.updateRef(repository.getFullBranch());
+        String fullBranch = repository.getFullBranch();
+        String targetRef = fullBranch != null && fullBranch.startsWith(Constants.R_HEADS) ? fullBranch : Constants.HEAD;
+        RefUpdate refUpdate = repository.updateRef(targetRef);
         refUpdate.setNewObjectId(commitId);
         refUpdate.setExpectedOldObjectId(parent != null ? parent : ObjectId.zeroId());
         refUpdate.setRefLogIdent(identity);

@@ -10,6 +10,23 @@ The implementation authority is:
 
 Do not treat the external PRD as authoritative when it conflicts with these corrections.
 
+## Gameplay State Rule
+
+RVC operations that change the current project state must not stop at Git or filesystem updates.
+
+When an operation changes which committed schematic state is active, the implementation must also update the in-game state so the player can see the result immediately. This applies to checkout and pull, and to any future operation that changes the active project version.
+
+Required behavior:
+
+- Update the Git repository or working tree as needed.
+- Restore the checked-out schematic state into the current Minecraft world for the tracked sub-regions.
+- Refresh the Litematica ghost overlay to the same state.
+- Run or refresh verifier state when the client and schematic worlds are available.
+- Use the schematic's real world origin, computed from `index.json` plus local `Master Origin`, not an arbitrary repository or Master Origin path.
+- Never apply masked air from the enclosing schematic cuboid to untracked space between independent sub-regions. Game-world writes must be limited to tracked sub-region boxes.
+
+This rule is intentionally stronger than ordinary Git semantics because RVC is an in-game version control workflow. If the repository changes but the player cannot see the corresponding world/overlay state, the feature is incomplete.
+
 ## Corrections
 
 ### 1. `history.json` Is a Wrong Design
@@ -64,7 +81,7 @@ The current implementation stores `local_selection` in `local.json`. This was ad
 
 ### 4. Current Sub-Region Serialization Needs Fixing
 
-Status: need fixing.
+Status: fixed in the current implementation.
 
 The PRD correctly identifies that tracked areas must be explicit sub-regions, but the current implementation does not yet serialize them in the final desired model.
 
@@ -89,6 +106,14 @@ Required direction:
 - Avoid treating multiple independent sub-regions as one enclosing cuboid in the long-term design.
 - Keep fallback code explicit and visibly named when fallback to current selection is necessary.
 
+Implementation notes:
+
+- `index.json` now stores versioned sub-region entries with names, sizes, and positions relative to the local Master Origin.
+- `local.json` stores the clone-local Master Origin and remains ignored by Git.
+- Commit code restores the tracked selection from `index.json` plus `local.json`.
+- Fallback to the current in-game selection remains explicit in method names.
+- `index.schematic` is still a single schematic file for compatibility, but blocks outside the tracked sub-regions are masked to air after `SchematicaSchematic.createFromWorld(...)`, so independent sub-regions no longer commit real world blocks from the space between them.
+
 ### 5. Repeated Directory Structure Warning
 
 Do not follow PRD directory structure advice.
@@ -103,7 +128,7 @@ Any future storage change must answer:
 
 ### 6. Post-Commit Tracking and Verification Needs Fixing
 
-Status: need fixing.
+Status: fixed in the current implementation.
 
 The PRD describes a useful post-commit workflow: after a commit, the committed state should be visible as a persistent ghost overlay and the world should be compared against that committed state.
 
@@ -122,9 +147,17 @@ Required direction:
 - Provide a clean/dirty signal comparing the current world against the last committed state.
 - Make overlay visibility follow existing Litematica rendering controls where possible.
 
+Implementation notes:
+
+- After an RVC commit from the project GUI, the committed `index.schematic` is loaded through Litematica's schematic holder.
+- A normal Litematica schematic placement is created at the schematic's real world origin, computed from versioned sub-regions plus the clone-local Master Origin.
+- The placement uses existing Litematica rendering controls, so the ghost overlay follows the same rendering pipeline as other placements.
+- The schematic verifier is started when a client world and schematic world are available.
+- The project page reports a clean/dirty tracking status after verifier completion.
+
 ### 7. History UI Actions Need Fixing
 
-Status: need fixing.
+Status: fixed for the safe MVP surface.
 
 The PRD expects history entries to support workflows such as checkout and inspection. The current RVC project page only displays a flat commit list.
 
@@ -140,6 +173,14 @@ Required direction:
 - At minimum, design space for future `Checkout`, `Inspect`, and possibly `Diff` actions.
 - Do not implement destructive world-changing actions without preview and safety checks.
 - Do not confuse Git push/pull with PRD history inspection features.
+
+Implementation notes:
+
+- Commit history rows now expose `Inspect` and `Checkout` action buttons.
+- `Inspect` displays the selected commit summary in the GUI message area.
+- `Checkout` restores the selected commit into the repository working tree and applies the checked-out schematic state to the tracked sub-regions in the current Minecraft world.
+- `Checkout` also reloads the Litematica overlay and verifier so the visible in-game state matches the checked-out commit.
+- Push and pull remain top-level project operations and are not mixed with per-commit history actions.
 
 ### 8. Remote Sync Guidance from the PRD Should Be Ignored
 
@@ -164,10 +205,10 @@ The following implemented areas are intentionally accepted:
 - Push and pull may exist in the MVP.
 - `local.json` must stay ignored and local-only.
 
-The following areas need fixing:
+The following areas have been fixed or deliberately bounded:
 
-- Move shared sub-region definitions into versioned `index.json`.
-- Keep Master Origin in local-only `local.json`.
-- Stop relying on one enclosing cuboid as the long-term storage model.
-- Add post-commit ghost overlay and clean/dirty verification.
-- Add meaningful history row actions once safe checkout/inspect workflows exist.
+- Shared sub-region definitions are versioned in `index.json`.
+- Master Origin is kept in local-only `local.json`.
+- `index.schematic` masks blocks outside tracked sub-regions instead of committing real blocks from one enclosing cuboid.
+- Post-commit, pull, and checkout all refresh the visible in-game state through world restoration and/or ghost overlay plus verifier.
+- History rows include `Inspect` and real `Checkout` actions.
