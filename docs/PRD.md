@@ -132,6 +132,16 @@ Before the physical swap occurs, the system enters a Preview Mode:
 
 ---
 
+### Context Menu
+
+| Option                 | Function                                                  |
+| ---------------------- | --------------------------------------------------------- |
+| **Checkout**           | Physically swaps the world to this commit's state.        |
+| **Open Changes**       | Enters the dual-ghost visualizer mode (See 4.4).          |
+| **Create Branch From** | Spawns a new independent timeline from this anchor point. |
+
+---
+
 ## 4.4 History Diff Inspection (Visual Comparison)
 
 This feature is an advanced diagnostic mode modeled after Litematica and TechUtils verifiers. It allows users to see exactly what changed within a specific commit by comparing it against its predecessor in a non-interactable, "view-only" environment.
@@ -193,16 +203,6 @@ In the **Project Manager**, branching is handled as a contextual action tied to 
 2. **Branch Setup**: Upon clicking **[Create Branch From]**, you are prompted to **name** the new timeline (e.g., `feature`).
 3. **Structural Inheritance**: The new branch initially inherits the exact **Sub-Region definitions** (box sizes and positions) of the commit it was spawned from.
 4. **Divergent Layouts**: From this point forward, any changes made to Sub-Regions (adding, resizing, or moving boxes) are recorded **only** within the active branch. This allows one branch to have a compact footprint while another expands to include new modules.
-
----
-
-### Updated UI Context Menu
-
-| Option                 | Function                                                  |
-| ---------------------- | --------------------------------------------------------- |
-| **Checkout**           | Physically swaps the world to this commit's state.        |
-| **Inspect Diff**       | Enters the dual-ghost visualizer mode (See 4.4).          |
-| **Create Branch From** | Spawns a new independent timeline from this anchor point. |
 
 ## TODO Remote
 
