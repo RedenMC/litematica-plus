@@ -20,10 +20,9 @@ The **Project Origin** is the universal zero-point anchor for the project.
 
 1. **Default Placement**: Upon project creation, the Project Origin is automatically set to **Position 1 (Pos1)** of your Litematica selection.
 2. **Integrated Origin Controls**: In the top right of the Project Manager, you can find the origin management tools to refine this anchor:
-
-- **Coordinate Fields**: Manually type X, Y, and Z values to set a specific world coordinate.
-- **Nudge Buttons**: Use the **[plus/minus]** buttons to shift the origin block-by-block.
-- **Move to Player**: Click this to snap the Project Origin to your current stance.
+   - **Coordinate Fields**: Manually type X, Y, and Z values to set a specific world coordinate.
+   - **Nudge Buttons**: Use the **[plus/minus]** buttons to shift the origin block-by-block.
+   - **Move to Player**: Click this to snap the Project Origin to your current stance.
 
 3. **Visual Representation**: The Project Origin is visually based on Litematica's **Manual Origin** indicator. It renders in the world as a **transparent cyan box**. This distinct color differentiates the project's master anchor from the standard orange manual origin, while maintaining the familiar look and feel of the base mod.
 
@@ -72,11 +71,10 @@ Immediately after saving, the system engages "Tracking Mode" to help you visuali
 1. **Automatic Overlay**: The version you just saved is projected back into the world as a **Ghost Overlay**.
 2. **Real-Time Comparison**: As you continue working, the system constantly compares the physical blocks in the world to the saved ghost state.
 3. **Change Highlighting**: Any deviations from the saved version are instantly highlighted with color tints:
-
-- **Red**: The wrong block is in this position.
-- **Orange**: The block is correct, but its state is wrong (e.g., a repeater is on the wrong delay).
-- **Magenta**: A block from the save is missing in the world.
-- **Light Blue/Cyan**: An extra block exists in the world that was not in the save.
+   - **Red**: The wrong block is in this position.
+   - **Orange**: The block is correct, but its state is wrong (e.g., a repeater is on the wrong delay).
+   - **Magenta**: A block from the save is missing in the world.
+   - **Light Blue/Cyan**: An extra block exists in the world that was not in the save.
 
 4. **The Clean State**: If the physical build matches the save exactly, no highlights appear. This acts as a visual confirmation that there are no "unsaved changes."
 5. **Visibility Control**: You can toggle the ghost overlay and the highlights on or off at any time using standard Litematica rendering hotkeys.
@@ -91,3 +89,88 @@ Immediately after saving, the system engages "Tracking Mode" to help you visuali
 | **Capture**      | Hierarchical Scan    | Records blocks to Sub-Region Origin -> Project Origin.  |
 | **Tracking**     | Active Ghost Overlay | Real-time comparison between world and save begins.     |
 | **Verification** | Color Highlighting   | Visual cues appear if the build deviates from the save. |
+
+## 4.3 Checkout (Version Restoration)
+
+This flow allows users to physically revert the world to a specific point in history. It includes a mandatory preview phase to ensure the restoration is accurate before the world is modified.
+
+### 4.3.1 The Checkout Trigger and Safety Check
+
+1. **Select Version**: The user selects a commit from the history list to "Checkout."
+2. **Unsaved Changes Prompt**: The system checks the current world state against the last save. If discrepancies exist, the user is prompted to commit or discard changes before proceeding.
+
+### 4.3.2 Target Version Preview (Ghost Overlay)
+
+Before the physical swap occurs, the system enters a Preview Mode:
+
+1. **Ghost Placement**: The selected target version is loaded as a Ghost Overlay in the world, mapped to the current Project Origin.
+2. **Visual Verification**: The user can walk around the build to see exactly where the blocks will land.
+3. **Real-Time Comparison**: The system highlights mismatches between the current physical world and the target ghost overlay using the standard color palette (Red/Orange/Magenta/Cyan). This shows the user exactly what will be added, removed, or changed if they proceed.
+
+### 4.3.3 The Final Confirmation and Restoration
+
+1. **Confirmation Prompt**: The user is presented with a final choice: [Confirm] or [Cancel].
+2. **Union Volume Clear**: Upon confirmation, the system calculates the Union Volume (the combined bounding boxes of the Current State and the Target State) and clears everything within this volume, including:
+   - All blocks and their states.
+   - All entities (Armor stands, Minecarts, Item frames, etc.).
+   - All Tile Entity data (inventories, signs, etc.).
+
+3. **Physical World Swap**: The system populates the cleared volume with the exact block states, entities, and NBT data from the target commit.
+4. **Overlay Transition**: The ghost overlay from the preview is dismissed, and a new persistent ghost overlay of the now-active version is applied.
+
+---
+
+### Checkout Workflow Summary
+
+| Stage            | Action                 | Result                                          |
+| ---------------- | ---------------------- | ----------------------------------------------- |
+| **Selection**    | Pick version from list | Initiates the restoration sequence.             |
+| **Preview**      | Inspect Ghost Overlay  | Visualizes changes before world modification.   |
+| **Confirmation** | Click [Confirm]        | Triggers the physical block swap.               |
+| **Result**       | World Update           | Physical blocks now match the selected version. |
+
+---
+
+## 4.4 History Diff Inspection (Visual Comparison)
+
+This feature is an advanced diagnostic mode modeled after Litematica and TechUtils verifiers. It allows users to see exactly what changed within a specific commit by comparing it against its predecessor in a non-interactable, "view-only" environment.
+
+### 4.4.1 The Inspection Trigger and Safety Check
+
+1. **Select Commit**: The user selects a specific entry from the history list to inspect.
+2. **Safety Check**: The system prompts the user to ensure the current physical work is saved.
+3. **The "Visualizer" Clear**: Upon confirmation, the system calculates the combined volume of the **Current State**, the **Parent State**, and the **Target State**. It clears all physical blocks and entities from this volume to provide a clean slate for the visualizer.
+4. **Full-Build Ghost Loading**: Unlike a traditional text-based Git diff that only shows lines changed, this mode loads **two complete versions of the entire build**. Both layers are aligned to the **Project Origin**:
+   - **Layer A (The Parent State)**: A ghost representation of the entire build as it existed in the previous version. This layer uses **Solid-Style Transparency**, making it look like real blocks while remaining non-interactable.
+   - **Layer B (The Target State)**: A translucent ghost representation of the entire build as it exists in the selected version, layered directly over the Parent.
+
+### 4.4.2 Standardized Color Palette
+
+The system compares the two complete build states and applies tints based on the differences found between the two full-volume layers:
+
+| Color              | Status Type      | Description                                                                      |
+| ------------------ | ---------------- | -------------------------------------------------------------------------------- |
+| **Light Blue**     | Added            | Block exists in the Target version but was absent in the Parent.                 |
+| **Pink / Magenta** | Removed          | Block was in the Parent but is missing from the Target.                          |
+| **Orange**         | Mismatched State | Block type is the same, but properties (delay, rotation) or inventories changed. |
+| **Red**            | Wrong Block      | The block type in the Target is different from the Parent at that coordinate.    |
+
+### 4.4.3 The Verifier GUI and Toggle View
+
+The user can open a specialized History Verifier menu (identical in layout to the standard Schematic Verifier) to control the comparison between the Parent and Target states.
+
+- **Status Toggles**: Instantly filter by change type (e.g., "Hide all Pink" to see only what was added).
+- **Layer Visibility**: Toggle the Parent (Solid Ghost) or Target (Translucent Ghost) layer on/off to see the "Before" and "After" versions of the entire project.
+
+### 4.4.4 The Information HUD
+
+A real-time HUD provides data on the ghost blocks currently under the crosshair:
+
+- **Property Mismatches**: Displays the exact state change (e.g., Parent: delay=1 | Target: delay=3).
+- **Inventory Mismatches**: Lists specific item changes in containers (e.g., Target added 1x Diamond).
+- **Coordinate Data**: Shows the relative coordinate from the Project Origin.
+
+### 4.4.5 Component Clustering
+
+- **Glow Boundaries**: Groups of touching mismatched blocks are wrapped in a glowing edge to highlight the "zone" of change within the full build.
+- **Unit Logic**: Individual block changes are grouped into logical "component updates," allowing the user to see a complex circuit change as a single unit of history.
