@@ -141,8 +141,9 @@ This feature is an advanced diagnostic mode modeled after Litematica and TechUti
 2. **Safety Check**: The system prompts the user to ensure the current physical work is saved.
 3. **The "Visualizer" Clear**: Upon confirmation, the system calculates the combined volume of the **Current State**, the **Parent State**, and the **Target State**. It clears all physical blocks and entities from this volume to provide a clean slate for the visualizer.
 4. **Full-Build Ghost Loading**: Unlike a traditional text-based Git diff that only shows lines changed, this mode loads **two complete versions of the entire build**. Both layers are aligned to the **Project Origin**:
-   - **Layer A (The Parent State)**: A ghost representation of the entire build as it existed in the previous version. This layer uses **Solid-Style Transparency**, making it look like real blocks while remaining non-interactable.
-   - **Layer B (The Target State)**: A translucent ghost representation of the entire build as it exists in the selected version, layered directly over the Parent.
+
+- **Layer A (The Parent State)**: A ghost representation of the entire build as it existed in the previous version. This layer uses **Solid-Style Transparency**, making it look like real blocks while remaining non-interactable.
+- **Layer B (The Target State)**: A translucent ghost representation of the entire build as it exists in the selected version, layered directly over the Parent.
 
 ### 4.4.2 Standardized Color Palette
 
@@ -157,9 +158,11 @@ The system compares the two complete build states and applies tints based on the
 
 ### 4.4.3 The Verifier GUI and Toggle View
 
-The user can open a specialized History Verifier menu (identical in layout to the standard Schematic Verifier) to control the comparison between the Parent and Target states.
+The user can open the Verifier GUI to control the visualization of these two full-build layers:
 
-- **Status Toggles**: Instantly filter by change type (e.g., "Hide all Pink" to see only what was added).
+- **Filter by Comparison State**: Instantly toggle the visibility of blocks based on their relationship between the two versions. This includes:
+- **Wrong Blocks (Red)**, **Wrong States (Orange)**, **Extra Blocks (Pink)**, **Missing Blocks (Blue)**, and **Correct State (Unchanged)**.
+- **Verification Range**: Use the **Range:** setting to define the scope of the comparison. This allows users to restrict the verification check to specific layers or sub-regions rather than the entire volume.
 - **Layer Visibility**: Toggle the Parent (Solid Ghost) or Target (Translucent Ghost) layer on/off to see the "Before" and "After" versions of the entire project.
 
 ### 4.4.4 The Information HUD
@@ -168,7 +171,6 @@ A real-time HUD provides data on the ghost blocks currently under the crosshair:
 
 - **Property Mismatches**: Displays the exact state change (e.g., Parent: delay=1 | Target: delay=3).
 - **Inventory Mismatches**: Lists specific item changes in containers (e.g., Target added 1x Diamond).
-- **Coordinate Data**: Shows the relative coordinate from the Project Origin.
 
 ### 4.4.5 Component Clustering
 
