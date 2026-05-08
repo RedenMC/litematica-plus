@@ -96,8 +96,9 @@ This flow allows users to physically revert the world to a specific point in his
 
 ### 4.3.1 The Checkout Trigger and Safety Check
 
-1. **Select Version**: The user selects a commit from the history list to "Checkout."
-2. **Unsaved Changes Prompt**: The system checks the current world state against the last save. If discrepancies exist, the user is prompted to commit or discard changes before proceeding.
+1. **Select Version**: In the **Project Manager**, click on a specific commit entry to expand the **Context Menu**.
+2. **Initiate Checkout**: Click the **[Checkout]** button within the context menu.
+3. **Unsaved Changes Prompt**: The system checks the current world state against the last save. If discrepancies exist, the user is prompted to commit or discard changes before proceeding.
 
 ### 4.3.2 Target Version Preview (Ghost Overlay)
 
@@ -135,12 +136,13 @@ Before the physical swap occurs, the system enters a Preview Mode:
 
 This feature is an advanced diagnostic mode modeled after Litematica and TechUtils verifiers. It allows users to see exactly what changed within a specific commit by comparing it against its predecessor in a non-interactable, "view-only" environment.
 
-### 4.4.1 The Inspection Trigger and Safety Check
+### 4.4.1 The Inspection Trigger (Action Hub)
 
-1. **Select Commit**: The user selects a specific entry from the history list to inspect.
-2. **Safety Check**: The system prompts the user to ensure the current physical work is saved.
-3. **The "Visualizer" Clear**: Upon confirmation, the system calculates the combined volume of the **Current State**, the **Parent State**, and the **Target State**. It clears all physical blocks and entities from this volume to provide a clean slate for the visualizer.
-4. **Full-Build Ghost Loading**: Unlike a traditional text-based Git diff that only shows lines changed, this mode loads **two complete versions of the entire build**. Both layers are aligned to the **Project Origin**:
+1. **Select Commit**: In the **Project Manager**, click on the commit entry you wish to audit to expand the **Context Menu**.
+2. **Initiate Inspection**: Click the **[Open Changes]** button.
+3. **Safety Check**: The system prompts the user to ensure the current physical work is saved.
+4. **The "Visualizer" Clear**: Upon confirmation, the system calculates the combined volume of the **Current State**, the **Parent State**, and the **Target State**. It clears all physical blocks and entities from this volume to provide a clean slate for the visualizer.
+5. **Full-Build Ghost Loading**: Unlike a traditional text-based Git diff that only shows lines changed, this mode loads **two complete versions of the entire build**. Both layers are aligned to the **Project Origin**:
 
 - **Layer A (The Parent State)**: A ghost representation of the entire build as it existed in the previous version. This layer uses **Solid-Style Transparency**, making it look like real blocks while remaining non-interactable.
 - **Layer B (The Target State)**: A translucent ghost representation of the entire build as it exists in the selected version, layered directly over the Parent.
@@ -176,3 +178,32 @@ A real-time HUD provides data on the ghost blocks currently under the crosshair:
 
 - **Glow Boundaries**: Groups of touching mismatched blocks are wrapped in a glowing edge to highlight the "zone" of change within the full build.
 - **Unit Logic**: Individual block changes are grouped into logical "component updates," allowing the user to see a complex circuit change as a single unit of history.
+
+---
+
+## 4.5 Branching (Parallel Timelines)
+
+This feature enables non-linear development, allowing both the project structure (Sub-Regions) and the block data to diverge into separate, independent paths.
+
+### 4.5.1 Contextual Branch Creation
+
+In the **Project Manager**, branching is handled as a contextual action tied to specific commits in your history.
+
+1. **Select a Base**: Click on any commit entry within the version history list. This expands a **Context Menu** for that specific point in time.
+2. **Branch Setup**: Upon clicking **[Create Branch From]**, you are prompted to **name** the new timeline (e.g., `feature`).
+3. **Structural Inheritance**: The new branch initially inherits the exact **Sub-Region definitions** (box sizes and positions) of the commit it was spawned from.
+4. **Divergent Layouts**: From this point forward, any changes made to Sub-Regions (adding, resizing, or moving boxes) are recorded **only** within the active branch. This allows one branch to have a compact footprint while another expands to include new modules.
+
+---
+
+### Updated UI Context Menu
+
+| Option                 | Function                                                  |
+| ---------------------- | --------------------------------------------------------- |
+| **Checkout**           | Physically swaps the world to this commit's state.        |
+| **Inspect Diff**       | Enters the dual-ghost visualizer mode (See 4.4).          |
+| **Create Branch From** | Spawns a new independent timeline from this anchor point. |
+
+## TODO Remote
+
+host project on server
