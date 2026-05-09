@@ -204,6 +204,90 @@ In the **Project Manager**, branching is handled as a contextual action tied to 
 3. **Structural Inheritance**: The new branch initially inherits the exact **Sub-Region definitions** (box sizes and positions) of the commit it was spawned from.
 4. **Divergent Layouts**: From this point forward, any changes made to Sub-Regions (adding, resizing, or moving boxes) are recorded **only** within the active branch. This allows one branch to have a compact footprint while another expands to include new modules.
 
+---
+
+## 4.6 Feature: Branch Merging & Conflict Resolution
+
+Merging allows parallel timelines to converge. This process is divided into two distinct phases: first defining the tracking boundaries (Structural), then reconciling the blocks within those boundaries (Content).
+
+### 4.6.1 Structural Merge (The Volume Phase)
+
+Before block data is compared, the system must resolve the "where" and "how big" of the tracking boxes.
+
+1. **Coordinate Mapping**: The system mathematically resolves the world-position of all sub-regions. By calculating positions relative to the shared **Project Origin**, it determines if a build has physically moved in the world or if only the tracking box itself has shifted.
+2. **Geometric Comparison**: If a Sub-Region's Relative Position or Size differs between the two branches, the user must choose a boundary definition.
+
+- **The Choice**: "Which tracking volume (Box) should we keep for the merged version?"
+
+3. **The Box vs. Build Logic**: If the bounding box moved but the machine stayed at the same world coordinates, the system recognizes that the content is identical. No block-level conflict is triggered.
+
+### 4.6.2 Content Merge (Blocks, Inventories, and Entities)
+
+Once the structural volume is established, the system reconciles the actual content based on physical world-space coordinates. This phase covers everything from solid blocks to the data stored within containers and entities.
+
+### A. Blocks and Inventories (Manual Resolution)
+
+Block-level data and container contents are treated as critical project information. Any discrepancy requires a manual choice to ensure the technical integrity of the build.
+
+- **Block Comparison**: The system checks for differences in **Block Type** and **Block State**.
+- **Inventory Contents**: For all container blocks, the system performs a comparison of the stored items and their properties.
+- **Resolution Logic**: If the contents or states differ between branches, the block is flagged as a conflict. The user must select **[Accept Incoming]** or **[Keep Current]** to determine which version to preserve.
+
+### B. Entity Reconciliation (Tiered Tracking)
+
+To prevent minor metadata fluctuations from cluttering the merge, entities use a tiered resolution system based on their unique identity:
+
+1. **Tracked**: User manually resolves the conflict through the verifier.
+2. **Tracked but Hidden**: System silently keeps the **Current** branch value to maintain consistency.
+3. **Untracked**: System discards both versions and applies **Default Values** to ensure a clean state.
+
+### C. Visual Conflict Audit (The "Merge Verifier")
+
+To facilitate rapid resolution, the system utilizes the same visual diagnostic tools as the History Diff mode:
+
+- **Standardized Color Palette**: All mismatches between branches are highlighted using the project's universal color code (e.g., **Red** for wrong blocks, **Orange** for wrong states, etc.).
+- **Component Clustering**: Just as in **4.4.5**, the system groups adjacent mismatched blocks or entities into logical clusters. These are wrapped in a glowing boundary, allowing the user to accept or reject an entire circuit update or machine module as a single unit rather than block-by-block.
+
+### D. The Trimming Protocol
+
+If any resolved data (Accepted blocks, resolved entities, or defaulted stats) sits outside the final boundaries of the box chosen in **4.6.1**, the system will **crop** that data. Only content physically contained within the final merged volume is preserved in the resulting commit.
+
+---
+
+### Merge Conflict Summary
+
+| Feature                  | Conflict Type          | Resolution Method |
+| ------------------------ | ---------------------- | ----------------- |
+| **Blocks**               | Type/State Mismatch    | Manual Choice     |
+| **Inventories**          | Content Mismatch       | Manual Choice     |
+| **Entities (Tracked)**   | Presence/Pose Mismatch | Manual Choice     |
+| **Entities (Hidden)**    | Physics/Rotation Diff  | Auto-Current      |
+| **Entities (Untracked)** | Status/Life Stats Diff | Auto-Default      |
+
+Stage,Logic,User Interaction
+
+1. Volume Selection,Compare Current vs. Incoming Box dimensions/offsets.,Select [Current Box] or [Incoming Box].
+2. Content Diff,Compare blocks based on resolved world-coordinates.,Use colors to [Accept] or [Reject] changes.
+3. Trimming Check,"Check if ""Accepted"" blocks fall outside the selected volume.",[Confirm Trim] or adjust volume.
+4. Overlap Check,Detect if boxes now share the same world-space.,[Acknowledge Overlap] and finalize merge.
+
+### 4.6.3 Shared Ownership & Overlaps
+
+When merging causes two or more Sub-Regions to occupy the same physical space:
+
+1. **Shared Ownership**: The system allows sub-regions to overlap. A single block in the world can be tracked by multiple sub-regions simultaneously.
+2. **Synchronization**: Any change made to a physical block within an overlapping zone is automatically reflected in all sub-regions that "own" that space.
+3. **Visual Feedback**: In the Selection GUI, overlapping areas are highlighted to ensure the user is aware that multiple boxes are tracking that specific component.
+
+### 4.6.4 Final Merge Validation Workflow
+
+| Stage                   | Logic                                                        | User Interaction                                    |
+| ----------------------- | ------------------------------------------------------------ | --------------------------------------------------- |
+| **1. Volume Selection** | Compare Current vs. Incoming Box dimensions/offsets.         | Select **[Current Box]** or **[Incoming Box]**.     |
+| **2. Content Diff**     | Compare blocks based on resolved world-coordinates.          | Use colors to **[Accept]** or **[Reject]** changes. |
+| **3. Trimming Check**   | Check if "Accepted" blocks fall outside the selected volume. | **[Confirm Trim]** or adjust volume.                |
+| **4. Overlap Check**    | Detect if boxes now share the same world-space.              | **[Acknowledge Overlap]** and finalize merge.       |
+
 ## TODO
 
 Remote: host project on server
