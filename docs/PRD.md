@@ -204,6 +204,7 @@ In the **Project Manager**, branching is handled as a contextual action tied to 
 3. **Structural Inheritance**: The new branch initially inherits the exact **Sub-Region definitions** (box sizes and positions) of the commit it was spawned from.
 4. **Divergent Layouts**: From this point forward, any changes made to Sub-Regions (adding, resizing, or moving boxes) are recorded **only** within the active branch. This allows one branch to have a compact footprint while another expands to include new modules.
 
-## TODO Remote
+## TODO
 
-host project on server
+Remote: host project on server
+discard all changes hotkey/button
