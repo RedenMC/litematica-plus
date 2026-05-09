@@ -352,7 +352,7 @@ public class RvcRepositoryIntegrationTest
 
         try
         {
-            RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, RvcRepository.resolveHead(repoDir), "after checkout");
+            RvcRepository.commit(repoDir, "Checkout Commit Project", createTinyStructureTemplate(), player, "after checkout");
             throw new AssertionError("commit should fail while HEAD is detached");
         }
         catch (IOException e)
