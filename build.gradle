@@ -1,5 +1,6 @@
 plugins {
 	id 'net.fabricmc.fabric-loom' version '1.15.+'
+	id 'com.gradleup.shadow' version '9.4.1'
 	id 'maven-publish'
 }
 
@@ -20,13 +21,18 @@ repositories {
 //	maven { url = 'https://api.modrinth.com/maven' }
 }
 
+configurations {
+	shadow
+	implementation.extendsFrom shadow
+}
+
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 //    mappings loom.officialMojangMappings()
 	implementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
 	implementation "com.google.code.findbugs:jsr305:3.0.2"
-	implementation "org.eclipse.jgit:org.eclipse.jgit:7.6.0.202603022253-r"
-	implementation "org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.6.0.202603022253-r"
+	shadow "org.eclipse.jgit:org.eclipse.jgit:7.6.0.202603022253-r"
+	shadow "org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.6.0.202603022253-r"
 //	implementation "org.jspecify:jspecify:1.0.0"
 
 	implementation "fi.dy.masa.malilib:malilib-fabric-${project.minecraft_version_out}:${project.malilib_version}"
@@ -130,6 +136,16 @@ jar {
 	from("LICENSE") {
 		rename { "${it}_${base.archivesName}"}
 	}
+}
+
+tasks.named('shadowJar') {
+	archiveClassifier.set('shadow')
+	configurations = project.configurations.named('shadow').map { [it] }
+	mergeServiceFiles()
+}
+
+tasks.named('assemble') {
+	dependsOn tasks.named('shadowJar')
 }
 
 tasks.publish.dependsOn build
