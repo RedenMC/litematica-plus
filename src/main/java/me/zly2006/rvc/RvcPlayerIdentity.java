@@ -4,15 +4,9 @@ import java.util.Objects;
 import java.util.UUID;
 import org.eclipse.jgit.lib.PersonIdent;
 
-public final class RvcPlayerIdentity
-{
-    private final String name;
-    private final UUID uuid;
-
-    public RvcPlayerIdentity(String name, UUID uuid)
-    {
-        if (name == null || name.isBlank())
-        {
+public record RvcPlayerIdentity(String name, UUID uuid) {
+    public RvcPlayerIdentity(String name, UUID uuid) {
+        if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Player name must not be blank");
         }
 
@@ -20,23 +14,11 @@ public final class RvcPlayerIdentity
         this.uuid = Objects.requireNonNull(uuid, "uuid");
     }
 
-    public String name()
-    {
-        return this.name;
-    }
-
-    public UUID uuid()
-    {
-        return this.uuid;
-    }
-
-    public String email()
-    {
+    public String email() {
         return this.uuid + "@minecraft";
     }
 
-    PersonIdent toPersonIdent()
-    {
+    PersonIdent toPersonIdent() {
         return new PersonIdent(this.name, this.email());
     }
 }
