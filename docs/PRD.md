@@ -99,16 +99,33 @@ Immediately after saving, the system engages "Tracking Mode" to help you visuali
 4. **The Clean State**: If the physical build matches the save exactly, no highlights appear. This acts as a visual confirmation that there are no "unsaved changes."
 5. **Visibility Control**: You can toggle the ghost overlay and the highlights on or off at any time using standard Litematica rendering hotkeys.
 
+### 4.2.4 The Discard Mechanism (Instant Reversion)
+
+The **Discard Changes** function acts as an emergency reset for the workspace. It utilizes the same restoration engine as the **Checkout** process (see 4.3.3) but skips the preview phase for a faster, one-click recovery of the last saved state.
+
+1. **Initiate Discard**: Click the **[Discard Changes]** button in the **Project Manager** (located next to the [Save Version] button).
+2. **Irreversible Action Warning**: Because this bypasses the standard Checkout preview, a mandatory confirmation prompt appears:
+
+   > **"Warning: This will physically overwrite all blocks within project sub-regions to match the last commit. This action is irreversible. Proceed?"**
+
+3. **Physical Restoration (The "Swap")**: Upon confirmation, the system performs a high-priority version restoration:
+   - **Clear**: Wipes blocks, entities, and NBT data within the current sub-region volumes.
+   - **Restore**: Instantly populates the volumes with the exact states recorded in the **active commit**.
+
+4. **Clean State Transition**: The world is now physically identical to the last save. All tracking highlights (Red/Magenta/etc.) are automatically cleared.
+
 ---
 
 ### Commit Lifecycle Summary
 
-| Stage            | Action               | Result                                                  |
-| ---------------- | -------------------- | ------------------------------------------------------- |
-| **Trigger**      | Click [Save Version] | Opens the description prompt.                           |
-| **Capture**      | Hierarchical Scan    | Records blocks to Sub-Region Origin -> Project Origin.  |
-| **Tracking**     | Active Ghost Overlay | Real-time comparison between world and save begins.     |
-| **Verification** | Color Highlighting   | Visual cues appear if the build deviates from the save. |
+| Stage            | Action                      | Result                                                                 |
+| ---------------- | --------------------------- | ---------------------------------------------------------------------- |
+| **Trigger**      | Click **[Save Version]**    | Opens description prompt; records a new historical milestone.          |
+| **Tracking**     | Active Ghost Overlay        | Real-time color-coded comparison between world and save.               |
+| **Recovery**     | Click **[Discard Changes]** | **Triggers Warning Prompt**; physically reverts blocks to last commit. |
+| **Verification** | Color Highlighting          | Visual cues appear if the build deviates from the save.                |
+
+---
 
 ## 4.3 Checkout (Version Restoration)
 
