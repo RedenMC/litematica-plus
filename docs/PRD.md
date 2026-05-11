@@ -16,35 +16,33 @@ The initialization process converts a standard Litematica selection into a manag
 
 ### 4.1.2 Setting and Adjusting the Project Origin
 
-The **Project Origin** is the universal zero-point anchor for the project.
+The **Project Origin** is the universal zero-point anchor for the project. Every sub-region saved in the system is stored relative to this reference point.
 
-1. **Default Placement**: Upon project creation, the Project Origin is automatically set to **Position 1 (Pos1)** of your Litematica selection.
-2. **Integrated Origin Controls**: In the top right of the Project Manager, you can find the origin management tools to refine this anchor:
-   - **Coordinate Fields**: Manually type X, Y, and Z values to set a specific world coordinate.
-   - **Nudge Buttons**: Use the **[plus/minus]** buttons to shift the origin block-by-block.
-   - **Move to Player**: Click this to snap the Project Origin to your current stance.
+1. **Default Placement**: Upon project creation, the Project Origin is automatically set to **Position 1 (Pos1)** of the initial Litematica selection.
+2. **Visual Representation**: It renders in the world as a **transparent cyan box**. This distinct color differentiates the project's master anchor from standard Litematica manual origins.
+3. **Relocation Logic**: The Project Origin can be moved via the **Project Editor** (see 4.1.3). If the origin is relocated, the system mathematically offsets all sub-regions to ensure the physical build remains at the same world coordinates.
 
-3. **Visual Representation**: The Project Origin is visually based on Litematica's **Manual Origin** indicator. It renders in the world as a **transparent cyan box**. This distinct color differentiates the project's master anchor from the standard orange manual origin, while maintaining the familiar look and feel of the base mod.
+### 4.1.3 The Project Editor (Structural Command)
 
-### 4.1.3 Workspace Focus Mode
+The **Project Editor** is the dedicated interface for managing a project's physical presence. While it is based on the familiar **Litematica Area Editor** workflow, it is a separate tool focused entirely on VCS-tracked volumes.
 
-To maintain project integrity, the system enforces a strict focus mode once a project is active.
+1. **Access**: The **[Project Editor]** button is located in the **Project Manager** dashboard and the **Litematica Main Menu**.
+2. **Expanded Functionality**: The Project Editor acts as a "Superset" of the standard area editor:
+   - **Origin Tools**: Includes coordinate fields for manual X, Y, Z entry, nudge buttons, and a **[Move to Player]** button to anchor the project stance.
+   - **Volume Management**: Allows users to **Add, Remove, Resize, Rename**, and **Relocate** the sub-regions specifically assigned to the active project.
 
-1. **Interface Locking**: The standard **Area Selection Browser** in the main Litematica menu becomes **grayed out** and non-interactive. You cannot create new standalone selections while the project is active.
-2. **Unified Control**: You retain full control of your areas through the **Area Editor** button in Litematica menu and the Project Manager. This allows you to modify the sub-regions specifically for this project.
-3. **Restoring Functionality**: Normal Litematica selection functionality is restored only when you exit the Project Manager or unload the active project.
+3. **VCS Integration**: Unlike the standard Area Editor, any changes made here (e.g., resizing a box) are flagged as "Structural Changes" in the project history, requiring a commit to be finalized.
+4. **Interaction**: It functions identically to Litematica’s standard editor, providing real-time visual feedback and allowing for manual box adjustments in the world while the menu is active.
 
 ---
 
 ### UI Component Summary
 
-| Component              | Location            | Function                                 | In-World Visual          |
-| ---------------------- | ------------------- | ---------------------------------------- | ------------------------ |
-| **Create VCS Project** | Save Schematic Page | Initializes project and saves Version 1. | N/A                      |
-| **Origin Fields**      | Top Right (Manager) | Manual X, Y, Z entry and nudging.        | **Cyan Transparent Box** |
-| **Move to Player**     | Top Right (Manager) | Snaps project anchor to stance.          | **Cyan Transparent Box** |
-| **Area Editor**        | Project Manager     | Modifies project tracking volumes.       | Standard Selection Boxes |
-| **Litematica Menu**    | Main Menu           | Area Selection Browser                   | **Grayed Out (Locked)**  |
+| Component              | Location            | Function                                                | In-World Visual               |
+| ---------------------- | ------------------- | ------------------------------------------------------- | ----------------------------- |
+| **Create VCS Project** | Save Schematic Page | Initializes project and saves Version 1.                | N/A                           |
+| **Project Editor**     | Manager / Main Menu | Dedicated hub for Origin and Project Volume management. | **Cyan Box / White Outlines** |
+| **Origin Tools**       | Project Editor      | Manual entry, nudging, and snapping anchor.             | **Cyan Transparent Box**      |
 
 ## 4.2 Commit (The State Saving Flow)
 
