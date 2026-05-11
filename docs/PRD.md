@@ -55,11 +55,16 @@ The **Project Editor** is the dedicated interface for managing a project's physi
 
 ### UI Component Summary
 
-| Component          | Location            | Function                                                | In-World Visual               |
-| ------------------ | ------------------- | ------------------------------------------------------- | ----------------------------- |
-| **Create Project** | Save Schematic Page | Initializes project and saves Version 1.                | N/A                           |
-| **Project Editor** | Manager / Main Menu | Dedicated hub for Origin and Project Volume management. | **Cyan Box / White Outlines** |
-| **Origin Tools**   | Project Editor      | Manual entry, nudging, and snapping anchor.             | **Cyan Transparent Box**      |
+| Component           | Location             | Function                                                                            | In-World Visual               |
+| ------------------- | -------------------- | ----------------------------------------------------------------------------------- | ----------------------------- |
+| **Project Browser** | Litematica Main Menu | List of all projects; entry point for manual project creation.                      | N/A                           |
+| **Create Project**  | Save Schem / Browser | Initializes project. Automates **Initial Commit** if used from Save Schematic page. | N/A                           |
+| **Project Manager** | Browser              | Central dashboard for branches, commits, and project metadata.                      | N/A                           |
+| **Project Editor**  | Manager / Main Menu  | Dedicated hub for Origin and Project Volume management.                             | **Cyan Box / White Outlines** |
+| **Origin Tools**    | Project Editor       | Manual entry, nudging, and snapping anchor.                                         | **Cyan Transparent Box**      |
+| **Area Editor**     | Litematica Main Menu | Standard Litematica volume management for non-VCS selections.                       | Standard Selection Boxes      |
+
+---
 
 ## 4.2 Commit (The State Saving Flow)
 
