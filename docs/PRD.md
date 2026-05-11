@@ -2,23 +2,40 @@
 
 The initialization process converts a standard Litematica selection into a managed VCS project. This flow handles naming, area definition, and the first version save in one seamless sequence.
 
-### 4.1.1 Project Creation and Automatic Commit
+### 4.1.1 Project Creation and Access
+
+Users can initiate or access projects through two distinct workflows depending on whether they are converting an existing selection or starting a fresh repository.
+
+#### A. The "Convert Selection" Flow (Fast-Track):
 
 1. **Define Areas**: Use Litematica in "Normal" selection mode to define your build. This can include one or **multiple sub-regions**.
 2. **The Entry Point**: Open the Litematica menu and navigate to:
    **Area Selection** -> **Save Schematic**
-3. **Initiate VCS**: Click the **[Create VCS Project]** button located at the bottom of the page.
+3. **Initiate Project**: Click the **[Create Project]** button located at the bottom of the page.
 4. **Naming and Finalizing**: A prompt appears for you to name your project. Upon clicking confirm:
    - The project is created.
    - All active sub-regions are imported into the project.
-   - **The Root Version (Version 1)** is automatically captured and saved.
+   - An **initial commit** is automatically captured
 5. **Automatic Manager Entry**: The system immediately transitions you into the **Project Manager** dashboard for that project.
+
+#### B. The "Project Browser" Flow (Manual Setup):
+
+The **Project Browser** serves as the central hub for all version-controlled builds.
+
+1. **Entry Point**: Located at the same level as the Area Editor in the **Litematica Main Menu**.
+2. **Project List**: Displays all existing projects. Loading a project from this list opens its respective **Project Manager**.
+3. **Empty Project Creation**: Clicking the **[Create New Project]** button at the bottom of the browser allows for a "Manual" setup:
+   - **Naming**: The user provides a project name.
+   - **Empty State**: The user is sent to an empty **Project Manager**. No sub-regions are imported, and **no initial commit** is made.
+   - **Manual Definition**: This allows the user to open the **Project Editor** to manually set the **Project Origin** and define sub-regions _before_ capturing the first version.
 
 ### 4.1.2 Setting and Adjusting the Project Origin
 
 The **Project Origin** is the universal zero-point anchor for the project. Every sub-region saved in the system is stored relative to this reference point.
 
-1. **Default Placement**: Upon project creation, the Project Origin is automatically set to **Position 1 (Pos1)** of the initial Litematica selection.
+1. **Placement Logic**:
+   - In the **Fast-Track** flow, the origin defaults to **Position 1 (Pos1)** of the selection.
+   - In the **Manual** flow, the origin is unset until defined by the user.
 2. **Visual Representation**: It renders in the world as a **transparent cyan box**. This distinct color differentiates the project's master anchor from standard Litematica manual origins.
 3. **Relocation Logic**: The Project Origin can be moved via the **Project Editor** (see 4.1.3). If the origin is relocated, the system mathematically offsets all sub-regions to ensure the physical build remains at the same world coordinates.
 
@@ -38,11 +55,11 @@ The **Project Editor** is the dedicated interface for managing a project's physi
 
 ### UI Component Summary
 
-| Component              | Location            | Function                                                | In-World Visual               |
-| ---------------------- | ------------------- | ------------------------------------------------------- | ----------------------------- |
-| **Create VCS Project** | Save Schematic Page | Initializes project and saves Version 1.                | N/A                           |
-| **Project Editor**     | Manager / Main Menu | Dedicated hub for Origin and Project Volume management. | **Cyan Box / White Outlines** |
-| **Origin Tools**       | Project Editor      | Manual entry, nudging, and snapping anchor.             | **Cyan Transparent Box**      |
+| Component          | Location            | Function                                                | In-World Visual               |
+| ------------------ | ------------------- | ------------------------------------------------------- | ----------------------------- |
+| **Create Project** | Save Schematic Page | Initializes project and saves Version 1.                | N/A                           |
+| **Project Editor** | Manager / Main Menu | Dedicated hub for Origin and Project Volume management. | **Cyan Box / White Outlines** |
+| **Origin Tools**   | Project Editor      | Manual entry, nudging, and snapping anchor.             | **Cyan Transparent Box**      |
 
 ## 4.2 Commit (The State Saving Flow)
 
