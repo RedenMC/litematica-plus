@@ -101,12 +101,13 @@ Immediately after saving, the system engages "Tracking Mode" to help you visuali
 
 ### 4.2.4 The Discard Mechanism (Instant Reversion)
 
-The **Discard Changes** function acts as an emergency reset for the workspace. It utilizes the same restoration engine as the **Checkout** process (see 4.3.3) but skips the preview phase for a faster, one-click recovery of the last saved state.
+The **Discard Changes** function provides a rapid way to reset the workspace to a known-good state. It is designed for iterative testing, allowing users to experiment with blocks or redstone logic and then instantly roll back to the last commit without navigating the full Checkout menu.
 
 1. **Initiate Discard**: Click the **[Discard Changes]** button in the **Project Manager** (located next to the [Save Version] button).
-2. **Irreversible Action Warning**: Because this bypasses the standard Checkout preview, a mandatory confirmation prompt appears:
+2. **Safety Confirmation**: By default, a mandatory confirmation prompt appears to prevent accidental data loss.
 
    > **"Warning: This will physically overwrite all blocks within project sub-regions to match the last commit. This action is irreversible. Proceed?"**
+   - **Configurable Prompt**: For users who prefer an uninterrupted workflow, this warning can be disabled in the **Project Settings** (located in the Project Manager at the same level as the Project Editor). When disabled, clicking Discard triggers the restoration immediately.
 
 3. **Physical Restoration (The "Swap")**: Upon confirmation, the system performs a high-priority version restoration:
    - **Clear**: Wipes blocks, entities, and NBT data within the current sub-region volumes.
@@ -328,4 +329,3 @@ When merging causes two or more Sub-Regions to occupy the same physical space:
 ## TODO
 
 Remote: host project on server
-discard all changes hotkey/button
