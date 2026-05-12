@@ -33,7 +33,6 @@ dependencies {
 	implementation "com.google.code.findbugs:jsr305:3.0.2"
 	shadow "org.eclipse.jgit:org.eclipse.jgit:7.6.0.202603022253-r"
 	shadow "org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.6.0.202603022253-r"
-//	implementation "org.jspecify:jspecify:1.0.0"
 
 	implementation "fi.dy.masa.malilib:malilib-fabric-${project.minecraft_version_out}:${project.malilib_version}"
 //	implementation "com.github.sakura-ryoko:malilib:${project.malilib_version}"
@@ -42,7 +41,7 @@ dependencies {
 //	compileOnly fabricApi.module("fabric-api-base", project.fabric_api_version)
 //	compileOnly fabricApi.module("fabric-networking-api-v1", project.fabric_api_version)
 //	compileOnly fabricApi.module("fabric-resource-loader-v1", project.fabric_api_version)
-	include(implementation("me.fallenbreath:conditional-mixin-fabric:${project.conditionalmixin_version}"))
+	shadow(implementation("me.fallenbreath:conditional-mixin-fabric:${project.conditionalmixin_version}"))
 
 	compileOnly "com.terraformersmc:modmenu:${project.mod_menu_version}"
 //	compileOnly "maven.modrinth:iris:${project.iris_version}+${project.iris_mc_version}-fabric"
