@@ -106,7 +106,7 @@ The **Discard Changes** function provides a rapid way to reset the workspace to 
 1. **Initiate Discard**: Click the **[Discard Changes]** button in the **Project Manager** (located next to the [Save Version] button).
 2. **Safety Confirmation**: By default, a mandatory confirmation prompt appears to prevent accidental data loss.
 
-   > **"Warning: This will physically overwrite all blocks within project sub-regions to match the last commit. This action is irreversible. Proceed?"**
+   > **"Warning: This will physically overwrite all blocks and entities in your workspace to match the latest version. This action is irreversible. Proceed?"**
    - **Configurable Prompt**: For users who prefer an uninterrupted workflow, this warning can be disabled in the **Project Settings** (located in the Project Manager at the same level as the Project Editor). When disabled, clicking Discard triggers the restoration immediately.
 
 3. **Physical Restoration (The "Swap")**: Upon confirmation, the system performs a high-priority version restoration:
@@ -137,6 +137,7 @@ This flow allows users to physically revert the world to a specific point in his
 1. **Select Version**: In the **Project Manager**, click on a specific commit entry to expand the **Context Menu**.
 2. **Initiate Checkout**: Click the **[Checkout]** button within the context menu.
 3. **Unsaved Changes Prompt**: The system checks the current world state against the last save. If discrepancies exist, the user is prompted to commit or discard changes before proceeding.
+   > **"You have unsaved changes in your workspace. Please save a version or discard your changes."**
 
 ### 4.3.2 Target Version Preview (Ghost Overlay)
 
@@ -148,7 +149,8 @@ Before the physical swap occurs, the system enters a Preview Mode:
 
 ### 4.3.3 The Final Confirmation and Restoration
 
-1. **Confirmation Prompt**: The user is presented with a final choice: [Confirm] or [Cancel].
+1. **Confirmation Prompt**: The user is presented with a final choice:
+   > "**This will physically overwrite all blocks and entities in your workspace to match the target version. Proceed?**"
 2. **Union Volume Clear**: Upon confirmation, the system calculates the Union Volume (the combined bounding boxes of the Current State and the Target State) and clears everything within this volume, including:
    - All blocks and their states.
    - All entities (Armor stands, Minecarts, Item frames, etc.).
@@ -328,4 +330,7 @@ When merging causes two or more Sub-Regions to occupy the same physical space:
 
 ## TODO
 
-Remote: host project on server
+Remote: host project on minecraft server
+clone project:
+user need to place the project overlay by modifying project origin
+once placed it will generate area selection according to placement
