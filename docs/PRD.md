@@ -261,19 +261,22 @@ Before block data is compared, the system must resolve the "where" and "how big"
 
 3. **The Box vs. Build Logic**: If the bounding box moved but the machine stayed at the same world coordinates, the system recognizes that the content is identical. No block-level conflict is triggered.
 
-### 4.6.2 Content Merge (Blocks, Inventories, and Entities)
+### 4.6.2 Content Reconciliation (Reconciling Blocks & Entities)
 
-Once the structural volume is established, the system reconciles the actual content based on physical world-space coordinates. This phase covers everything from solid blocks to the data stored within containers and entities.
+Once the structural volume is established, the system attempts to reconcile the content based on physical world-space coordinates. This phase covers everything from solid blocks to NBT data and entities.
 
-### A. Blocks and Inventories (Manual Resolution)
+1. **Auto-Merge**: If a block or entity has only been modified in one branch (and remains unchanged from the base in the other), the system automatically applies that change to the resulting merge.
+2. **Conflict Detection**: A **Merge Conflict** is triggered only when the same coordinate or entity has been modified in _both_ branches in ways that contradict each other.
+
+#### A. Blocks and Inventories (Manual Resolution)
 
 Block-level data and container contents are treated as critical project information. Any discrepancy requires a manual choice to ensure the technical integrity of the build.
 
 - **Block Comparison**: The system checks for differences in **Block Type** and **Block State**.
 - **Inventory Contents**: For all container blocks, the system performs a comparison of the stored items and their properties.
-- **Resolution Logic**: If the contents or states differ between branches, the block is flagged as a conflict. The user must select **[Accept Incoming]** or **[Keep Current]** to determine which version to preserve.
+- **Resolution Logic**: If the contents or states differ between branches, the block is flagged as a conflict. The user must resolve merge conflict through the merge editor.
 
-### B. Entity Reconciliation (Tiered Tracking)
+#### B. Entity Reconciliation (Tiered Tracking)
 
 To prevent minor metadata fluctuations from cluttering the merge, entities use a tiered resolution system based on their unique identity:
 
@@ -281,37 +284,69 @@ To prevent minor metadata fluctuations from cluttering the merge, entities use a
 2. **Tracked but Hidden**: System silently keeps the **Current** branch value to maintain consistency.
 3. **Untracked**: System discards both versions and applies **Default Values** to ensure a clean state.
 
-### C. Visual Conflict Audit (The "Merge Verifier")
+#### C. Visual Conflict Audit (The "Merge Verifier")
 
 To facilitate rapid resolution, the system utilizes the same visual diagnostic tools as the History Diff mode:
 
-- **Standardized Color Palette**: All mismatches between branches are highlighted using the project's universal color code (e.g., **Red** for wrong blocks, **Orange** for wrong states, etc.).
+- **Standardized Color Palette**: All mismatches between branches are highlighted using the project's universal color code.
 - **Component Clustering**: Just as in **4.4.5**, the system groups adjacent mismatched blocks or entities into logical clusters. These are wrapped in a glowing boundary, allowing the user to accept or reject an entire circuit update or machine module as a single unit rather than block-by-block.
 
-### D. The Trimming Protocol
+### 4.6.3 The Merge Editor (Conflict Resolution Mode)
+
+The **Merge Editor** is a specialized UI environment that **only opens if merge conflicts are detected**. It provides the tools necessary to manually resolve discrepancies that the system could not handle automatically.
+
+#### A. The Three-Way Visualizer
+
+In this mode, the physical blocks in the world represent the **Base (The Merge Result)**. To help the user decide which data to keep, the system projects ghosts of the conflicting branches:
+
+1. **View Modes (Single-Selection)**:
+
+- **[View All Changes]**: Both Current and Incoming ghosts are **overlayed on top of the physical base** simultaneously.
+- **[View Incoming]**: Only the ghost of the incoming branch is overlayed on the base.
+- **[View Current]**: Only the ghost of your local branch is overlayed on the base.
+- **[View Base]**: Hides all overlays to show the current physical "Result" state.
+
+2. **Diagnostic Filters**: Toggles to isolate specific conflict types (e.g., showing only **Inventory Mismatches** or **Added/Removed Blocks**).
+
+#### B. The Resolution List & Cluster Logic
+
+To simplify the process, the editor groups adjacent or connected conflicting blocks into **Logical Clusters**.
+
+1. **Grouped List View**: A sidebar displays all conflict clusters.
+2. **Conflict Progress**: A live counter at the top shows: **"X Conflict Groups Remaining | Y Total Conflicts Unresolved."**
+
+#### C. Resolution Actions
+
+For any given group or individual child, the user can select:
+
+- **[Accept Current / Incoming]**: Overwrites the physical base with that branch's data.
+- **[Ignore]**: Discards both branch changes, preserving the **Base** state as the final result.
+- **[Accept Remaining Current / Incoming]**: Available for partially resolved clusters; applies the chosen branch to all remaining unresolved children in that group.
+- **[Accept Current Mix]**: Finalizes the cluster using the specific combination of manual choices already made by the user.
+
+#### D. The Trimming Protocol
 
 If any resolved data (Accepted blocks, resolved entities, or defaulted stats) sits outside the final boundaries of the box chosen in **4.6.1**, the system will **crop** that data. Only content physically contained within the final merged volume is preserved in the resulting commit.
 
+### 4.6.4 Merge Completion and Abort
+
+The merge remains "In Progress" until the conflict counter reaches zero.
+
+1. **Complete Merge**: Becomes active once all conflicts are resolved. Saves the final state as a **Merge Commit**.
+2. **Abort Merge**: Stops the process and uses the **Discard** logic to restore the world to its pre-merge state, wiping all resolution progress.
+
 ---
 
-### Merge Conflict Summary
+### Merge Logic Summary
 
-| Feature                  | Conflict Type          | Resolution Method |
-| ------------------------ | ---------------------- | ----------------- |
-| **Blocks**               | Type/State Mismatch    | Manual Choice     |
-| **Inventories**          | Content Mismatch       | Manual Choice     |
-| **Entities (Tracked)**   | Presence/Pose Mismatch | Manual Choice     |
-| **Entities (Hidden)**    | Physics/Rotation Diff  | Auto-Current      |
-| **Entities (Untracked)** | Status/Life Stats Diff | Auto-Default      |
+| Situation              | Action                | User Interaction                       |
+| ---------------------- | --------------------- | -------------------------------------- |
+| **No Conflicts**       | Auto-Merge            | None (Merge completes instantly).      |
+| **Conflicts Detected** | **Open Merge Editor** | Manual resolution required in 4.6.3.   |
+| **Partial Resolution** | "Accept Remaining"    | Bulk-fill the rest of a cluster.       |
+| **Finalization**       | Confirm Result        | Click [Complete Merge] at 0 conflicts. |
 
-Stage,Logic,User Interaction
-
-1. Volume Selection,Compare Current vs. Incoming Box dimensions/offsets.,Select [Current Box] or [Incoming Box].
-2. Content Diff,Compare blocks based on resolved world-coordinates.,Use colors to [Accept] or [Reject] changes.
-3. Trimming Check,"Check if ""Accepted"" blocks fall outside the selected volume.",[Confirm Trim] or adjust volume.
-4. Overlap Check,Detect if boxes now share the same world-space.,[Acknowledge Overlap] and finalize merge.
-
-### 4.6.3 Shared Ownership & Overlaps
+### 4.6.5 Shared Ownership & Overlaps
 
 When merging causes two or more Sub-Regions to occupy the same physical space:
 
@@ -319,7 +354,7 @@ When merging causes two or more Sub-Regions to occupy the same physical space:
 2. **Synchronization**: Any change made to a physical block within an overlapping zone is automatically reflected in all sub-regions that "own" that space.
 3. **Visual Feedback**: In the Selection GUI, overlapping areas are highlighted to ensure the user is aware that multiple boxes are tracking that specific component.
 
-### 4.6.4 Final Merge Validation Workflow
+### 4.6.6 Final Merge Validation Workflow
 
 | Stage                   | Logic                                                        | User Interaction                                    |
 | ----------------------- | ------------------------------------------------------------ | --------------------------------------------------- |
