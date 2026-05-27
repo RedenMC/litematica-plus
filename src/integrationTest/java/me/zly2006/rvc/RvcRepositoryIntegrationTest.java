@@ -46,6 +46,7 @@ public class RvcRepositoryIntegrationTest
         IntegrationTestSupport.run("raw index bytes are rejected instead of committed", RvcRepositoryIntegrationTest::rawIndexBytesAreRejectedInsteadOfCommitted);
         IntegrationTestSupport.run("commit uses current branch HEAD and history lists newest commits first", RvcRepositoryIntegrationTest::commitUsesCurrentBranchHeadAndHistoryListsNewestFirst);
         IntegrationTestSupport.run("project service lists valid repositories and pushes to a remote", RvcRepositoryIntegrationTest::projectServiceListsValidRepositoriesAndPushesToRemote);
+        IntegrationTestSupport.run("remote URL config can be created and edited", RvcRepositoryIntegrationTest::remoteUrlConfigCanBeCreatedAndEdited);
         IntegrationTestSupport.run("push uses the last active branch while HEAD is detached", RvcRepositoryIntegrationTest::pushUsesLastActiveBranchWhileHeadIsDetached);
         IntegrationTestSupport.run("legacy local selection is local-only and ignored by Git", RvcRepositoryIntegrationTest::legacyLocalSelectionIsLocalOnlyAndIgnoredByGit);
         IntegrationTestSupport.run("sub-regions are versioned in index json and master origin is local only", RvcRepositoryIntegrationTest::subRegionsAreVersionedInIndexJsonAndMasterOriginIsLocalOnly);
@@ -132,6 +133,47 @@ public class RvcRepositoryIntegrationTest
             IntegrationTestSupport.assertEquals(commit.getId(), masterId, "remote should receive pushed master branch");
             IntegrationTestSupport.assertTrue(pushStatuses.stream().anyMatch(status -> status.contains(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH)), "push status should report the pushed branch");
         }
+    }
+
+    private static void remoteUrlConfigCanBeCreatedAndEdited() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-remote-config-");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderRemoteConfig", UUID.fromString("123e4567-e89b-12d3-a456-426614174014"));
+
+        RvcRepository.commit(repoDir, "Remote Config", createTinyStructureTemplate(), player, "init");
+
+        String firstRemoteUrl = "git@github.com:example/first.git";
+        String secondRemoteUrl = "https://github.com/example/second.git";
+
+        IntegrationTestSupport.assertTrue(!RvcProjectService.hasRemote(repoDir), "new repo should not report a remote");
+
+        RvcProjectService.setRemote(repoDir, "  " + firstRemoteUrl + "  ");
+
+        IntegrationTestSupport.assertTrue(RvcProjectService.hasRemote(repoDir), "set remote should make origin available");
+        IntegrationTestSupport.assertEquals(firstRemoteUrl, RvcProjectService.remoteOriginUrl(repoDir), "remote URL should be trimmed before saving");
+
+        RvcProjectService.setRemote(repoDir, secondRemoteUrl);
+
+        try (Git git = Git.open(repoDir.toFile()))
+        {
+            Repository repository = git.getRepository();
+            IntegrationTestSupport.assertEquals(secondRemoteUrl, repository.getConfig().getString("remote", "origin", "url"), "edited remote URL");
+            IntegrationTestSupport.assertEquals("+refs/heads/*:refs/remotes/origin/*", repository.getConfig().getString("remote", "origin", "fetch"), "origin fetch refspec");
+            IntegrationTestSupport.assertEquals("origin", repository.getConfig().getString("branch", RvcProjectService.DEFAULT_BRANCH, "remote"), "current branch remote");
+            IntegrationTestSupport.assertEquals(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH, repository.getConfig().getString("branch", RvcProjectService.DEFAULT_BRANCH, "merge"), "current branch merge ref");
+        }
+
+        try
+        {
+            RvcProjectService.setRemote(repoDir, "   ");
+            throw new AssertionError("blank remote URL should be rejected");
+        }
+        catch (IllegalArgumentException e)
+        {
+            IntegrationTestSupport.assertTrue(e.getMessage().contains("must not be blank"), "blank remote error should explain the rejected input");
+        }
+
+        IntegrationTestSupport.assertEquals(secondRemoteUrl, RvcProjectService.remoteOriginUrl(repoDir), "blank edit should not replace existing remote");
     }
 
     private static void pushUsesLastActiveBranchWhileHeadIsDetached() throws Exception
@@ -229,7 +271,7 @@ public class RvcRepositoryIntegrationTest
             {
                 RevCommit commit = revWalk.parseCommit(repository.resolve(Constants.HEAD));
                 Set<String> files = listTreeFiles(repository, commit.getTree());
-                IntegrationTestSupport.assertTrue(files.contains(RvcProjectService.LOCAL_JSON) == false, "local.json should not be committed");
+                IntegrationTestSupport.assertTrue(!files.contains(RvcProjectService.LOCAL_JSON), "local.json should not be committed");
                 IntegrationTestSupport.assertTrue(git.status().call().isClean(), "local.json should be ignored");
             }
         }
@@ -246,8 +288,8 @@ public class RvcRepositoryIntegrationTest
         IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcRepository.INDEX_JSON), "\"name\": \"main\"");
         IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcRepository.INDEX_JSON), "\"pos1\": [");
         IntegrationTestSupport.assertFileContains(repoDir.resolve(RvcProjectService.LOCAL_JSON), "\"master_origin\"");
-        IntegrationTestSupport.assertTrue(Files.readString(repoDir.resolve(RvcRepository.INDEX_JSON)).contains("master_origin") == false, "master origin must not be versioned in index.json");
-        IntegrationTestSupport.assertTrue(Files.readString(repoDir.resolve(RvcProjectService.LOCAL_JSON)).contains(RvcProjectService.LOCAL_SELECTION_KEY) == false, "new sub-region metadata must not write legacy local_selection");
+        IntegrationTestSupport.assertTrue(!Files.readString(repoDir.resolve(RvcRepository.INDEX_JSON)).contains("master_origin"), "master origin must not be versioned in index.json");
+        IntegrationTestSupport.assertTrue(!Files.readString(repoDir.resolve(RvcProjectService.LOCAL_JSON)).contains(RvcProjectService.LOCAL_SELECTION_KEY), "new sub-region metadata must not write legacy local_selection");
 
         AreaSelection restored = RvcProjectService.readProjectAreaSelection(repoDir);
         IntegrationTestSupport.assertNotNull(restored, "index/local should restore project area selection");
@@ -261,7 +303,7 @@ public class RvcRepositoryIntegrationTest
         List<Box> boxes = List.copyOf(selection.getAllSubRegionBoxes());
 
         IntegrationTestSupport.assertTrue(RvcStructure.isTrackedPosition(new BlockPos(0, 0, 0), boxes), "first sub-region should be tracked");
-        IntegrationTestSupport.assertTrue(RvcStructure.isTrackedPosition(new BlockPos(1, 0, 0), boxes) == false, "gap between independent sub-regions must not be tracked");
+        IntegrationTestSupport.assertTrue(!RvcStructure.isTrackedPosition(new BlockPos(1, 0, 0), boxes), "gap between independent sub-regions must not be tracked");
         IntegrationTestSupport.assertTrue(RvcStructure.isTrackedPosition(new BlockPos(2, 0, 0), boxes), "second sub-region should be tracked");
     }
 
@@ -390,7 +432,7 @@ public class RvcRepositoryIntegrationTest
 
         RvcProjectService.resetWorkingTreeToHead(repoDir);
 
-        IntegrationTestSupport.assertTrue(RvcProjectService.hasUncommittedChanges(repoDir) == false, "reset should clean tracked local edits");
+        IntegrationTestSupport.assertTrue(!RvcProjectService.hasUncommittedChanges(repoDir), "reset should clean tracked local edits");
         IntegrationTestSupport.assertEquals(commit.getId(), RvcRepository.resolveHead(repoDir), "reset should leave HEAD at the same commit");
         IntegrationTestSupport.assertTrue(Files.readString(readme, StandardCharsets.UTF_8).contains("# Dirty Reset"), "README should be restored from HEAD");
         IntegrationTestSupport.assertTrue(Files.exists(untracked), "reset to HEAD should leave untracked files alone");
@@ -410,9 +452,9 @@ public class RvcRepositoryIntegrationTest
         RvcProjectService.resetWorkingTreeToHead(repoDir);
         RvcProjectService.checkoutCommitToWorkingTree(repoDir, first.getName());
 
-        IntegrationTestSupport.assertTrue(RvcProjectService.hasUncommittedChanges(repoDir) == false, "checkout after reset should leave the working tree clean");
+        IntegrationTestSupport.assertTrue(!RvcProjectService.hasUncommittedChanges(repoDir), "checkout after reset should leave the working tree clean");
         IntegrationTestSupport.assertEquals(first.getId(), RvcRepository.resolveHead(repoDir), "checkout after reset should move HEAD to the requested commit");
-        IntegrationTestSupport.assertTrue(second.getId().equals(RvcRepository.resolveHead(repoDir)) == false, "checkout after reset should not remain on the previous commit");
+        IntegrationTestSupport.assertTrue(!second.getId().equals(RvcRepository.resolveHead(repoDir)), "checkout after reset should not remain on the previous commit");
         assertStructurePaletteContains(repoDir.resolve(RvcRepository.INDEX_STRUCTURE), "minecraft:stone");
     }
 
@@ -470,7 +512,7 @@ public class RvcRepositoryIntegrationTest
         IntegrationTestSupport.assertTrue(files.contains(RvcRepository.README), "commit should include README.md");
         IntegrationTestSupport.assertTrue(files.contains(RvcRepository.INDEX_JSON), "commit should include index.json");
         IntegrationTestSupport.assertTrue(files.contains(RvcRepository.INDEX_STRUCTURE), "commit should include index.nbt");
-        IntegrationTestSupport.assertTrue(files.contains(RvcProjectService.LOCAL_JSON) == false, "commit must not include local.json");
+        IntegrationTestSupport.assertTrue(!files.contains(RvcProjectService.LOCAL_JSON), "commit must not include local.json");
     }
 
     private static void assertStructurePaletteContains(Path structureFile, String blockName) throws Exception

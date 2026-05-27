@@ -28,6 +28,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     private final String projectName;
     private List<RvcProjectService.CommitInfo> history = List.of();
     @Nullable private RvcProjectService.TrackingOverlay trackingOverlay;
+    @Nullable private String remoteUrl;
     private String trackingStatus = "";
     private boolean detachedHead;
     private String checkoutBranchName = RvcProjectService.DEFAULT_BRANCH;
@@ -50,6 +51,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         int y = 28;
         x += this.createButton(x, y, ButtonType.UPDATE_AREAS);
         x += this.createButton(x, y, ButtonType.COMMIT);
+        x += this.createButton(x, y, ButtonType.REMOTE);
         x += this.createButton(x, y, ButtonType.PUSH);
         x += this.createButton(x, y, ButtonType.PULL);
 
@@ -69,14 +71,16 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         int x = 16;
         int y = this.getHistoryStartY();
 
-        if (this.trackingStatus.isBlank() == false)
+        ctx.drawString(ctx.fontRenderer(), this.getRemoteDisplayText(), x, 54, 0xFFB7C5D8, false);
+
+        if (!this.trackingStatus.isBlank())
         {
-            ctx.drawString(ctx.fontRenderer(), this.trackingStatus, x, 54, 0xFF9FE870, false);
+            ctx.drawString(ctx.fontRenderer(), this.trackingStatus, x, 68, 0xFF9FE870, false);
         }
 
         if (this.detachedHead)
         {
-            ctx.drawString(ctx.fontRenderer(), StringUtils.translate("litematica.gui.label.rvc_project.detached_head"), x, 72, 0xFFFFB45C, false);
+            ctx.drawString(ctx.fontRenderer(), StringUtils.translate("litematica.gui.label.rvc_project.detached_head"), x, 82, 0xFFFFB45C, false);
         }
 
         ctx.drawString(ctx.fontRenderer(), StringUtils.translate("litematica.gui.label.rvc_project.history"), x, y - 16, 0xFFFFFFFF, false);
@@ -135,7 +139,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
     private void createDetachedHeadButton()
     {
-        if (this.detachedHead == false)
+        if (!this.detachedHead)
         {
             return;
         }
@@ -144,22 +148,24 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         String message = StringUtils.translate("litematica.gui.label.rvc_project.detached_head");
         int width = this.getStringWidth(label) + 16;
         int x = Math.min(16 + this.getStringWidth(message) + 8, this.getScreenWidth() - width - 12);
-        this.addButton(new ButtonGeneric(x, 66, width, 18, label), new ButtonListener(ButtonType.CHECKOUT_BRANCH, this));
+        this.addButton(new ButtonGeneric(x, 76, width, 18, label), new ButtonListener(ButtonType.CHECKOUT_BRANCH, this));
     }
 
     private int getHistoryStartY()
     {
-        return this.detachedHead ? 104 : 78;
+        return this.detachedHead ? 114 : 96;
     }
 
     private void refreshRepositoryState()
     {
         this.detachedHead = false;
         this.checkoutBranchName = RvcProjectService.DEFAULT_BRANCH;
+        this.remoteUrl = null;
 
         try
         {
             this.detachedHead = RvcProjectService.isDetachedHead(this.repositoryDirectory);
+            this.remoteUrl = RvcProjectService.remoteOriginUrl(this.repositoryDirectory);
 
             if (this.detachedHead)
             {
@@ -356,9 +362,9 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     {
         try
         {
-            if (RvcProjectService.hasRemote(this.repositoryDirectory) == false)
+            if (!RvcProjectService.hasRemote(this.repositoryDirectory))
             {
-                GuiBase.openGui(new GuiTextInput(512, "litematica.gui.title.rvc_project.remote_url", RvcProjectService.DEFAULT_REMOTE_URL, this, new RemoteUrlSetter(this)));
+                this.promptRemoteEdit(true);
                 return;
             }
 
@@ -367,7 +373,21 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         }
         catch (Exception e)
         {
-            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.push_failed", e.getMessage());
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.push_failed", RvcProjectService.describeRemoteFailure(e));
+        }
+    }
+
+    private void promptRemoteEdit(boolean pushAfterSave)
+    {
+        try
+        {
+            String currentRemoteUrl = RvcProjectService.remoteOriginUrl(this.repositoryDirectory);
+            String inputValue = currentRemoteUrl != null ? currentRemoteUrl : "";
+            GuiBase.openGui(new GuiTextInput(512, "litematica.gui.title.rvc_project.remote_url", inputValue, this, new RemoteUrlSetter(this, pushAfterSave)));
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.remote_failed", e.getMessage());
         }
     }
 
@@ -432,7 +452,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         }
         catch (Exception e)
         {
-            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.pull_failed", e.getMessage());
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.pull_failed", RvcProjectService.describeRemoteFailure(e));
         }
     }
 
@@ -466,6 +486,40 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     private void updateAreas()
     {
         this.addMessage(MessageType.INFO, "litematica.message.rvc_project.update_areas_todo");
+    }
+
+    private String getRemoteDisplayText()
+    {
+        String value = this.remoteUrl != null && !this.remoteUrl.isBlank() ?
+                this.remoteUrl :
+                StringUtils.translate("litematica.gui.label.rvc_project.remote_not_set");
+        String text = StringUtils.translate("litematica.gui.label.rvc_project.remote", value);
+        int maxWidth = Math.max(40, this.getScreenWidth() - 32);
+
+        return this.ellipsizeToWidth(text, maxWidth);
+    }
+
+    private String ellipsizeToWidth(String text, int maxWidth)
+    {
+        if (this.getStringWidth(text) <= maxWidth)
+        {
+            return text;
+        }
+
+        String suffix = "...";
+        int suffixWidth = this.getStringWidth(suffix);
+
+        for (int length = text.length(); length > 0; length--)
+        {
+            String candidate = text.substring(0, length);
+
+            if (this.getStringWidth(candidate) + suffixWidth <= maxWidth)
+            {
+                return candidate + suffix;
+            }
+        }
+
+        return suffix;
     }
 
     private void loadTrackingOverlay()
@@ -654,6 +708,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     {
         UPDATE_AREAS("litematica.gui.button.rvc_project.update_areas"),
         COMMIT("litematica.gui.button.rvc_project.commit"),
+        REMOTE("litematica.gui.button.rvc_project.remote"),
         PUSH("litematica.gui.button.rvc_project.push"),
         PULL("litematica.gui.button.rvc_project.pull"),
         CHECKOUT_BRANCH("litematica.gui.button.rvc_project.checkout_branch");
@@ -681,6 +736,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             {
                 case UPDATE_AREAS -> this.gui.updateAreas();
                 case COMMIT -> this.gui.promptCommitMessage();
+                case REMOTE -> this.gui.promptRemoteEdit(false);
                 case PUSH -> this.gui.push();
                 case PULL -> this.gui.promptPull();
                 case CHECKOUT_BRANCH -> this.gui.promptCheckoutBranch();
@@ -701,7 +757,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         }
     }
 
-    private record RemoteUrlSetter(GuiRvcProject gui) implements IStringConsumerFeedback
+    private record RemoteUrlSetter(GuiRvcProject gui, boolean pushAfterSave) implements IStringConsumerFeedback
     {
         @Override
         public boolean setString(String remoteUrl)
@@ -709,13 +765,24 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             try
             {
                 RvcProjectService.setRemote(this.gui.repositoryDirectory, remoteUrl);
-                RvcProjectService.push(this.gui.repositoryDirectory);
-                this.gui.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.pushed");
+                this.gui.refreshRepositoryState();
+
+                if (this.pushAfterSave)
+                {
+                    RvcProjectService.push(this.gui.repositoryDirectory);
+                    this.gui.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.pushed");
+                }
+                else
+                {
+                    this.gui.initGui();
+                    this.gui.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.remote_updated", remoteUrl.trim());
+                }
+
                 return true;
             }
             catch (Exception e)
             {
-                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_project.push_failed", e.getMessage());
+                this.gui.addMessage(MessageType.ERROR, this.pushAfterSave ? "litematica.error.rvc_project.push_failed" : "litematica.error.rvc_project.remote_failed", RvcProjectService.describeRemoteFailure(e));
                 return false;
             }
         }

@@ -33,6 +33,7 @@ dependencies {
 	implementation "com.google.code.findbugs:jsr305:3.0.2"
 	shadow "org.eclipse.jgit:org.eclipse.jgit:7.6.0.202603022253-r"
 	shadow "org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.6.0.202603022253-r"
+	shadow "net.i2p.crypto:eddsa:0.3.0"
 
 	implementation "fi.dy.masa.malilib:malilib-fabric-${project.minecraft_version_out}:${project.malilib_version}"
 //	implementation "com.github.sakura-ryoko:malilib:${project.malilib_version}"

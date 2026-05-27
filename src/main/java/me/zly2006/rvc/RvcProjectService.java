@@ -25,6 +25,7 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.PullResult;
 import org.eclipse.jgit.api.ResetCommand;
 import org.eclipse.jgit.api.Status;
+import org.eclipse.jgit.api.TransportConfigCallback;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
@@ -32,7 +33,11 @@ import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.transport.SshTransport;
 import org.eclipse.jgit.transport.PushResult;
+import org.eclipse.jgit.transport.Transport;
+import org.eclipse.jgit.transport.sshd.SshdSessionFactory;
+import org.eclipse.jgit.transport.sshd.SshdSessionFactoryBuilder;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
@@ -57,10 +62,9 @@ public final class RvcProjectService
     public static final String LOCAL_SELECTION_KEY = "local_selection";
     public static final String MASTER_ORIGIN_KEY = "master_origin";
     public static final String DEFAULT_BRANCH = Constants.MASTER;
-    public static final String DEFAULT_REMOTE_URL = "git@github.com:zly2006/rvc-v2-test.git";
-
     private static final String GIT_CONFIG_SECTION = "rvc";
     private static final String GIT_CONFIG_HISTORY_BRANCH_KEY = "historyBranch";
+    private static final List<String> DEFAULT_SSH_IDENTITY_NAMES = List.of("id_ed25519", "id_ecdsa", "id_rsa", "id_dsa");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final DateTimeFormatter COMMIT_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
@@ -151,7 +155,7 @@ public final class RvcProjectService
         JsonObject index = readJsonObject(repositoryDirectory.resolve(RvcRepository.INDEX_JSON));
         BlockPos masterOrigin = readLocalMasterOrigin(repositoryDirectory);
 
-        if (index == null || masterOrigin == null || index.has("sub_regions") == false || index.get("sub_regions").isJsonArray() == false)
+        if (index == null || masterOrigin == null || !index.has("sub_regions") || !index.get("sub_regions").isJsonArray())
         {
             return readLocalSelection(repositoryDirectory);
         }
@@ -162,7 +166,7 @@ public final class RvcProjectService
 
         for (JsonElement element : index.get("sub_regions").getAsJsonArray())
         {
-            if (element.isJsonObject() == false)
+            if (!element.isJsonObject())
             {
                 continue;
             }
@@ -171,7 +175,7 @@ public final class RvcProjectService
             BlockPos pos1 = readBlockPosArray(subRegion, "pos1");
             BlockPos pos2 = readBlockPosArray(subRegion, "pos2");
 
-            if (pos1 == null || pos2 == null || subRegion.has("name") == false)
+            if (pos1 == null || pos2 == null || !subRegion.has("name"))
             {
                 continue;
             }
@@ -264,7 +268,7 @@ public final class RvcProjectService
     {
         Path reposDirectory = reposDirectory(gameRunDirectory);
 
-        if (Files.isDirectory(reposDirectory) == false)
+        if (!Files.isDirectory(reposDirectory))
         {
             return List.of();
         }
@@ -357,7 +361,7 @@ public final class RvcProjectService
         try (Git git = Git.open(repositoryDirectory.toFile()))
         {
             String fullBranch = git.getRepository().getFullBranch();
-            return fullBranch == null || fullBranch.startsWith(Constants.R_HEADS) == false;
+            return fullBranch == null || !fullBranch.startsWith(Constants.R_HEADS);
         }
     }
 
@@ -386,12 +390,12 @@ public final class RvcProjectService
         {
             Status status = git.status().call();
             // reset --hard only returns tracked paths and the index to HEAD.
-            return status.getAdded().isEmpty() == false ||
-                    status.getChanged().isEmpty() == false ||
-                    status.getConflicting().isEmpty() == false ||
-                    status.getMissing().isEmpty() == false ||
-                    status.getModified().isEmpty() == false ||
-                    status.getRemoved().isEmpty() == false;
+            return !status.getAdded().isEmpty() ||
+                    !status.getChanged().isEmpty() ||
+                    !status.getConflicting().isEmpty() ||
+                    !status.getMissing().isEmpty() ||
+                    !status.getModified().isEmpty() ||
+                    !status.getRemoved().isEmpty();
         }
     }
 
@@ -439,7 +443,8 @@ public final class RvcProjectService
 
     public static boolean hasRemote(Path repositoryDirectory) throws IOException
     {
-        return remoteOriginUrl(repositoryDirectory) != null;
+        String remoteUrl = remoteOriginUrl(repositoryDirectory);
+        return remoteUrl != null && !remoteUrl.isBlank();
     }
 
     @Nullable
@@ -455,7 +460,9 @@ public final class RvcProjectService
     {
         Objects.requireNonNull(remoteUrl, "remoteUrl");
 
-        if (remoteUrl.isBlank())
+        String normalizedRemoteUrl = remoteUrl.trim();
+
+        if (normalizedRemoteUrl.isBlank())
         {
             throw new IllegalArgumentException("Remote Git URL must not be blank");
         }
@@ -463,8 +470,9 @@ public final class RvcProjectService
         try (Git git = Git.open(repositoryDirectory.toFile()))
         {
             StoredConfig config = git.getRepository().getConfig();
-            config.setString("remote", "origin", "url", remoteUrl.trim());
+            config.setString("remote", "origin", "url", normalizedRemoteUrl);
             config.setString("remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*");
+            configureRemoteTracking(git.getRepository(), config);
             config.save();
         }
     }
@@ -477,7 +485,7 @@ public final class RvcProjectService
         {
             String branch = pushBranchRef(git.getRepository());
 
-            for (PushResult result : git.push().setRemote("origin").add(branch).call())
+            for (PushResult result : git.push().setRemote("origin").add(branch).setTransportConfigCallback(sshTransportConfigCallback()).call())
             {
                 result.getRemoteUpdates().forEach(update -> statuses.add(update.getRemoteName() + ": " + update.getStatus()));
             }
@@ -491,9 +499,38 @@ public final class RvcProjectService
         try (Git git = Git.open(repositoryDirectory.toFile()))
         {
             currentBranch(git.getRepository());
-            PullResult result = git.pull().setRemote("origin").call();
+            PullResult result = git.pull().setRemote("origin").setTransportConfigCallback(sshTransportConfigCallback()).call();
             return result.isSuccessful() ? "OK" : "FAILED";
         }
+    }
+
+    public static String describeRemoteFailure(Throwable throwable)
+    {
+        String message = throwable.getMessage();
+        String fullMessage = collectThrowableMessages(throwable);
+        String displayMessage = message != null ? message : throwable.getClass().getSimpleName();
+
+        if (fullMessage.contains("no keys to try"))
+        {
+            return displayMessage + " " + sshIdentityDiagnostic();
+        }
+
+        if (fullMessage.contains("Server key did not validate"))
+        {
+            return displayMessage + " Trust GitHub's SSH host key once with: ssh -T git@github.com";
+        }
+
+        if (fullMessage.contains("Permission denied (publickey)"))
+        {
+            return displayMessage + " GitHub rejected the SSH key. Add your public key to GitHub and verify with: ssh -T git@github.com";
+        }
+
+        if (fullMessage.contains("CredentialsProvider has been registered"))
+        {
+            return displayMessage + " HTTPS private remotes need a GitHub token, which RVC does not support yet. Use an SSH remote such as git@github.com:user/repo.git.";
+        }
+
+        return displayMessage;
     }
 
     public static TrackingOverlay loadTrackingOverlay(Path repositoryDirectory, String projectName, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws IOException
@@ -544,7 +581,7 @@ public final class RvcProjectService
 
     private static boolean isValidProjectRepository(Path candidate)
     {
-        if (Files.isDirectory(candidate.resolve(".git")) == false || Files.isRegularFile(candidate.resolve(RvcRepository.INDEX_JSON)) == false)
+        if (!Files.isDirectory(candidate.resolve(".git")) || !Files.isRegularFile(candidate.resolve(RvcRepository.INDEX_JSON)))
         {
             return false;
         }
@@ -615,7 +652,7 @@ public final class RvcProjectService
         {
             boxes = getValidBoxes(localSelection);
 
-            if (boxes.isEmpty() == false)
+            if (!boxes.isEmpty())
             {
                 return createStructureFromSelectionBoxes(world, boxes, ignoreEntities);
             }
@@ -643,7 +680,7 @@ public final class RvcProjectService
     @Nullable
     private static JsonObject readJsonObject(Path file)
     {
-        if (Files.isRegularFile(file) == false)
+        if (!Files.isRegularFile(file))
         {
             return null;
         }
@@ -671,7 +708,7 @@ public final class RvcProjectService
     @Nullable
     private static BlockPos readBlockPosArray(JsonObject obj, String key)
     {
-        if (obj.has(key) == false || obj.get(key).isJsonArray() == false)
+        if (!obj.has(key) || !obj.get(key).isJsonArray())
         {
             return null;
         }
@@ -735,7 +772,7 @@ public final class RvcProjectService
     {
         String fullBranch = repository.getFullBranch();
 
-        if (fullBranch == null || fullBranch.startsWith(Constants.R_HEADS) == false)
+        if (fullBranch == null || !fullBranch.startsWith(Constants.R_HEADS))
         {
             throw new IOException("RVC repository is not on a local branch");
         }
@@ -755,7 +792,7 @@ public final class RvcProjectService
 
         String configuredBranch = repository.getConfig().getString(GIT_CONFIG_SECTION, null, GIT_CONFIG_HISTORY_BRANCH_KEY);
 
-        if (configuredBranch != null && configuredBranch.isBlank() == false && repository.resolve(configuredBranch) != null)
+        if (configuredBranch != null && !configuredBranch.isBlank() && repository.resolve(configuredBranch) != null)
         {
             return configuredBranch;
         }
@@ -770,7 +807,7 @@ public final class RvcProjectService
 
         List<Ref> localBranches = repository.getRefDatabase().getRefsByPrefix(Constants.R_HEADS);
 
-        if (localBranches.isEmpty() == false)
+        if (!localBranches.isEmpty())
         {
             String fallbackBranch = localBranches.get(0).getName();
             rememberHistoryBranch(repository, fallbackBranch);
@@ -792,6 +829,125 @@ public final class RvcProjectService
         throw new IOException("RVC repository has no local branch to push");
     }
 
+    private static void configureRemoteTracking(Repository repository, StoredConfig config) throws IOException
+    {
+        String branch = historyBranchRef(repository);
+
+        if (!branch.startsWith(Constants.R_HEADS))
+        {
+            return;
+        }
+
+        String shortBranchName = branch.substring(Constants.R_HEADS.length());
+        config.setString("branch", shortBranchName, "remote", "origin");
+        config.setString("branch", shortBranchName, "merge", branch);
+    }
+
+    private static TransportConfigCallback sshTransportConfigCallback()
+    {
+        return RvcProjectService::configureSshTransport;
+    }
+
+    private static void configureSshTransport(Transport transport)
+    {
+        if (transport instanceof SshTransport sshTransport)
+        {
+            Path homeDirectory = resolveSshHomeDirectory();
+            Path sshDirectory = homeDirectory.resolve(".ssh");
+            SshdSessionFactory sessionFactory = new SshdSessionFactoryBuilder()
+                    .setHomeDirectory(homeDirectory.toFile())
+                    .setSshDirectory(sshDirectory.toFile())
+                    .setDefaultIdentities(sshDir -> defaultSshIdentities(sshDir.toPath()))
+                    .build(null);
+            sshTransport.setSshSessionFactory(sessionFactory);
+        }
+    }
+
+    private static Path resolveSshHomeDirectory()
+    {
+        String envHome = System.getenv("HOME");
+
+        if (envHome != null && !envHome.isBlank())
+        {
+            Path home = Path.of(envHome);
+
+            if (hasDefaultSshIdentity(home))
+            {
+                return home;
+            }
+        }
+
+        String propertyHome = System.getProperty("user.home");
+
+        if (propertyHome != null && !propertyHome.isBlank())
+        {
+            return Path.of(propertyHome);
+        }
+
+        return Path.of(".");
+    }
+
+    private static boolean hasDefaultSshIdentity(Path homeDirectory)
+    {
+        Path sshDirectory = homeDirectory.resolve(".ssh");
+
+        for (String identityName : DEFAULT_SSH_IDENTITY_NAMES)
+        {
+            if (Files.isRegularFile(sshDirectory.resolve(identityName)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<Path> defaultSshIdentities(Path sshDirectory)
+    {
+        List<Path> identities = new ArrayList<>();
+
+        for (String identityName : DEFAULT_SSH_IDENTITY_NAMES)
+        {
+            Path identity = sshDirectory.resolve(identityName);
+
+            if (Files.isRegularFile(identity))
+            {
+                identities.add(identity);
+            }
+        }
+
+        return List.copyOf(identities);
+    }
+
+    private static String sshIdentityDiagnostic()
+    {
+        Path homeDirectory = resolveSshHomeDirectory();
+        Path sshDirectory = homeDirectory.resolve(".ssh");
+        List<Path> identities = defaultSshIdentities(sshDirectory);
+
+        if (identities.isEmpty())
+        {
+            return "RVC could not find an SSH private key. Java home=" + homeDirectory + "; expected one of " + DEFAULT_SSH_IDENTITY_NAMES + " in " + sshDirectory + ".";
+        }
+
+        return "RVC found SSH key file(s) " + identities + " but JGit could not use them. If the key has a passphrase, RVC needs passphrase prompt support; for the current MVP use an unencrypted OpenSSH key or configure a supported key file for github.com.";
+    }
+
+    private static String collectThrowableMessages(Throwable throwable)
+    {
+        StringBuilder builder = new StringBuilder();
+
+        for (Throwable current = throwable; current != null; current = current.getCause())
+        {
+            if (current.getMessage() != null)
+            {
+                builder.append(current.getMessage()).append('\n');
+            }
+        }
+
+        return builder.toString();
+    }
+
     private static void rememberCurrentBranchForHistory(Repository repository) throws IOException
     {
         String fullBranch = repository.getFullBranch();
@@ -806,7 +962,7 @@ public final class RvcProjectService
     {
         StoredConfig config = repository.getConfig();
 
-        if (fullBranch.equals(config.getString(GIT_CONFIG_SECTION, null, GIT_CONFIG_HISTORY_BRANCH_KEY)) == false)
+        if (!fullBranch.equals(config.getString(GIT_CONFIG_SECTION, null, GIT_CONFIG_HISTORY_BRANCH_KEY)))
         {
             config.setString(GIT_CONFIG_SECTION, null, GIT_CONFIG_HISTORY_BRANCH_KEY, fullBranch);
             config.save();

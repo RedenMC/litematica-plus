@@ -123,7 +123,7 @@ public final class RvcRepository
 
     private static void requireCommittableHead(Path directory) throws IOException
     {
-        if (Files.isDirectory(directory.resolve(".git")) == false)
+        if (!Files.isDirectory(directory.resolve(".git")))
         {
             return;
         }
@@ -138,7 +138,7 @@ public final class RvcRepository
     {
         CompoundTag root = NbtIo.readCompressed(new ByteArrayInputStream(structureBytes), NbtAccounter.unlimitedHeap());
 
-        if (root.contains("size") == false || root.contains("palette") == false || root.contains("blocks") == false)
+        if (!root.contains("size") || !root.contains("palette") || !root.contains("blocks"))
         {
             throw new IOException("RVC index.nbt must be a valid vanilla structure file");
         }
@@ -173,7 +173,7 @@ public final class RvcRepository
 
     private static void writeProjectMetadata(Path directory, String name) throws IOException
     {
-        if (Files.isRegularFile(directory.resolve(INDEX_JSON)) == false)
+        if (!Files.isRegularFile(directory.resolve(INDEX_JSON)))
         {
             Files.writeString(directory.resolve(INDEX_JSON), createIndexJson(name), StandardCharsets.UTF_8);
         }

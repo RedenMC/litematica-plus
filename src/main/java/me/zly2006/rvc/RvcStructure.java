@@ -60,7 +60,7 @@ public final class RvcStructure
             copyTrackedBlocksToTemporaryWorld(world, tempWorld, origin, size, boxes);
 
             StructureTemplate template = new StructureTemplate();
-            template.fillFromWorld(tempWorld, BlockPos.ZERO, size, ignoreEntities == false, List.of());
+            template.fillFromWorld(tempWorld, BlockPos.ZERO, size, !ignoreEntities, List.of());
             return template;
         }
         finally
