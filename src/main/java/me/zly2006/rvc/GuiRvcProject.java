@@ -56,6 +56,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         int x = 12;
         int y = 28;
         x += this.createButton(x, y, ButtonType.UPDATE_AREAS);
+        x += this.createButton(x, y, ButtonType.SCAN_CHANGES);
         x += this.createButton(x, y, ButtonType.COMMIT);
         x += this.createButton(x, y, ButtonType.REMOTE);
         x += this.createButton(x, y, ButtonType.PUSH);
@@ -538,7 +539,164 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
     private void updateAreas()
     {
-        this.addMessage(MessageType.INFO, "litematica.message.rvc_project.update_areas_todo");
+        Minecraft minecraft = Minecraft.getInstance();
+        AreaSelection selection = DataManager.getSelectionManager().getCurrentSelection();
+
+        if (!RvcProjectService.isSemanticProject(this.repositoryDirectory))
+        {
+            this.addMessage(MessageType.INFO, "litematica.message.rvc_project.update_areas_semantic_only");
+            return;
+        }
+
+        if (minecraft.player == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_player");
+            return;
+        }
+
+        if (minecraft.level == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        if (selection == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.update_areas_failed", StringUtils.translate("litematica.error.rvc_project.no_selection"));
+            return;
+        }
+
+        try
+        {
+            if (RvcProjectService.isDetachedHead(this.repositoryDirectory))
+            {
+                this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.update_areas_failed", StringUtils.translate("litematica.error.rvc_project.detached_head_commit"));
+                return;
+            }
+
+            int regionCount = RvcProjectService.countValidSelectionRegions(selection);
+
+            if (regionCount <= 0)
+            {
+                this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.update_areas_failed", StringUtils.translate("litematica.error.rvc_project.no_selection"));
+                return;
+            }
+
+            GuiConfirmAction gui = new GuiConfirmAction(
+                    420,
+                    "litematica.gui.title.rvc_project.confirm_update_areas",
+                    new UpdateAreasConfirmListener(this),
+                    this,
+                    "litematica.gui.message.rvc_project.confirm_update_areas",
+                    regionCount
+            );
+            GuiBase.openGui(gui);
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.update_areas_failed", e.getMessage());
+        }
+    }
+
+    private void updateAreasFromCurrentSelection()
+    {
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        Level world = minecraft.level;
+        AreaSelection selection = DataManager.getSelectionManager().getCurrentSelection();
+
+        if (player == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_player");
+            return;
+        }
+
+        if (world == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        if (selection == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.update_areas_failed", StringUtils.translate("litematica.error.rvc_project.no_selection"));
+            return;
+        }
+
+        try
+        {
+            RvcPlayerIdentity identity = new RvcPlayerIdentity(player.getName().getString(), player.getUUID());
+            RvcProjectService.UpdateAreasResult result = RvcProjectService.updateSemanticAreas(this.repositoryDirectory, identity, world, selection, "update areas");
+
+            if (result.commit() == null)
+            {
+                this.initGui();
+                this.addMessage(MessageType.INFO, "litematica.message.rvc_project.nothing_to_commit");
+                return;
+            }
+
+            this.trackingStatus = StringUtils.translate("litematica.gui.label.rvc_project.semantic_tracking_unavailable");
+            this.initGui();
+            this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.update_areas_updated", result.regionCount());
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.update_areas_failed", e.getMessage());
+        }
+    }
+
+    private void scanChanges()
+    {
+        Minecraft minecraft = Minecraft.getInstance();
+        Level world = minecraft.level;
+
+        if (world == null)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        if (!RvcProjectService.isSemanticProject(this.repositoryDirectory))
+        {
+            this.addMessage(MessageType.INFO, "litematica.message.rvc_project.scan_semantic_only");
+            return;
+        }
+
+        try
+        {
+            RvcProjectService.SemanticScanResult result = RvcProjectService.scanSemanticChanges(this.repositoryDirectory, world);
+
+            if (result.unknownChunks() > 0)
+            {
+                this.trackingStatus = StringUtils.translate(
+                        "litematica.gui.label.rvc_project.semantic_scan_unknown",
+                        result.changedChunks(),
+                        result.addedChunks(),
+                        result.removedChunks(),
+                        result.unknownChunks()
+                );
+                this.addMessage(MessageType.INFO, "litematica.message.rvc_project.scan_unknown", result.unknownChunks(), result.dirtyChunks());
+            }
+            else if (result.clean())
+            {
+                this.trackingStatus = StringUtils.translate("litematica.gui.label.rvc_project.semantic_scan_clean", result.unchangedChunks());
+                this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.scan_clean", result.unchangedChunks());
+            }
+            else
+            {
+                this.trackingStatus = StringUtils.translate(
+                        "litematica.gui.label.rvc_project.semantic_scan_dirty",
+                        result.changedChunks(),
+                        result.addedChunks(),
+                        result.removedChunks()
+                );
+                this.addMessage(MessageType.INFO, "litematica.message.rvc_project.scan_dirty", result.changedChunks(), result.addedChunks(), result.removedChunks());
+            }
+        }
+        catch (Exception e)
+        {
+            this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.scan_failed", e.getMessage());
+        }
     }
 
     private String getRemoteDisplayText()
@@ -765,6 +923,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     private enum ButtonType
     {
         UPDATE_AREAS("litematica.gui.button.rvc_project.update_areas"),
+        SCAN_CHANGES("litematica.gui.button.rvc_project.scan_changes"),
         COMMIT("litematica.gui.button.rvc_project.commit"),
         REMOTE("litematica.gui.button.rvc_project.remote"),
         PUSH("litematica.gui.button.rvc_project.push"),
@@ -793,6 +952,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             switch (this.type)
             {
                 case UPDATE_AREAS -> this.gui.updateAreas();
+                case SCAN_CHANGES -> this.gui.scanChanges();
                 case COMMIT -> this.gui.promptCommitMessage();
                 case REMOTE -> this.gui.promptRemoteEdit(false);
                 case PUSH -> this.gui.push();
@@ -932,6 +1092,22 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         public boolean onActionConfirmed()
         {
             this.gui.pull();
+            return true;
+        }
+
+        @Override
+        public boolean onActionCancelled()
+        {
+            return true;
+        }
+    }
+
+    private record UpdateAreasConfirmListener(GuiRvcProject gui) implements IConfirmationListener
+    {
+        @Override
+        public boolean onActionConfirmed()
+        {
+            this.gui.updateAreasFromCurrentSelection();
             return true;
         }
 

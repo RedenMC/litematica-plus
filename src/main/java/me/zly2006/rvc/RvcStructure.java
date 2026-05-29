@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
+import fi.dy.masa.litematica.Litematica;
 import fi.dy.masa.litematica.schematic.placement.TemporaryWorldHolder;
 import fi.dy.masa.litematica.schematic.placement.TemporaryWorldManager;
 import fi.dy.masa.litematica.selection.Box;
@@ -121,8 +122,9 @@ public final class RvcStructure
                                     NbtView view = NbtView.getReader(nbt, tempWorld.registryAccess());
                                     tempBlockEntity.loadWithComponents(view.getReader());
                                 }
-                                catch (Exception ignored)
+                                catch (Exception e)
                                 {
+                                    Litematica.LOGGER.debug("RvcStructure: failed to copy block entity at '{}' into temporary structure world: {}", worldPos, e.getMessage());
                                 }
                             }
                         }

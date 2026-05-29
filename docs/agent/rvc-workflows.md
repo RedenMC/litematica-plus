@@ -13,7 +13,7 @@ Entry point:
 Current behavior:
 
 1. Requires player, client world, non-empty current area selection, and non-blank repository name.
-2. Creates repo under `<game run dir>/repos/<project name>`.
+2. Creates repo under `<game run dir>/rvc-projects/<project name>`.
 3. Converts the selection into semantic site `main`.
 4. Writes versioned `rvc.json` with site, region, and chunk refs.
 5. Writes local-only `local.json` with active site and site origin.
@@ -36,6 +36,9 @@ Implementation:
 
 - `GuiRvcProjectManager` lists valid repos found by `RvcProjectService.listProjects(...)`.
 - A valid project must have `.git`, either semantic `rvc.json` or legacy `index.json`, and be openable by JGit.
+- The project browser root is `<game run dir>/rvc-projects/`.
+- The project browser `Delete Project` action shows a confirmation dialog, then recursively deletes only validated RVC repositories under `<game run dir>/rvc-projects/`.
+- After deletion, the browser clears selection, refreshes the directory listing, and reports success or failure in the GUI.
 
 ## Commit
 
@@ -48,16 +51,44 @@ Current behavior:
 1. Blocks commits on detached HEAD and prompts to checkout `master` first.
 2. Prompts for a non-blank message.
 3. If the repo has `rvc.json`, reads semantic manifest and `local.json`.
-4. Captures the active site's tracked chunks through `RvcMinecraftWorldReader`.
+4. Captures the active site's tracked chunks through `RvcMinecraftWorldReader`; in singleplayer this uses the integrated server's matching `ServerLevel` on the server thread.
 5. Updates `rvc.json` chunk refs and writes missing `objects/sha256/**.rvcchunk` files.
 6. Commits semantic files through `RvcSemanticRepository`/`RvcRepository`.
 7. If the repo is legacy `index.json`/`index.nbt`, uses the older structure export path and reloads overlay/verifier.
+8. If a semantic commit has no content changes, the service returns `null` and the GUI reports `Nothing to commit`.
 
 Implementation notes:
 
 - The method name `createStructureFromIndexSubRegionsOrFallbackToCurrentPositionUtilsGetValidBoxes(...)` is intentionally explicit about fallback behavior.
 - Detached HEAD commits are rejected in `RvcRepository.requireCommittableHead(...)`.
-- Semantic no-op commits return `null` at service level and should get clearer GUI feedback in the next slice.
+
+## Scan Changes
+
+Entry point:
+
+- `GuiRvcProject` Scan changes button.
+
+Current behavior:
+
+Semantic `rvc.json` repos:
+
+1. Requires a client world.
+2. Resolves the active site from `local.json`.
+3. Uses the integrated server's matching `ServerLevel` in singleplayer when available.
+4. Hashes current tracked chunks through `RvcCaptureEngine.scanSite(...)`.
+5. Does not write missing object files and does not update `rvc.json`.
+6. Compares current hashes to the manifest chunk refs.
+7. Reports clean, dirty, or unknown in the GUI.
+
+Legacy `index.nbt` repos:
+
+- The button reports that semantic projects are the supported scan path for now.
+
+Known gaps:
+
+- Scan result is not yet reused as enforced preflight for commit/checkout/pull/reset/merge.
+- Scan state is not persisted and has no stale invalidation yet.
+- Dedicated-server authoritative scan still needs server-side RVC support.
 
 ## Tracking Overlay
 
@@ -200,17 +231,26 @@ Entry point:
 
 Current behavior:
 
-- Stub only: displays `litematica.message.rvc_project.update_areas_todo`.
+Semantic `rvc.json` repos:
 
-Required direction from `docs/TODO.md`:
+1. Requires player, client world, current Litematica area selection, and non-detached HEAD.
+2. Shows a basic confirmation with selected region count.
+3. Keeps the existing local-only site origin from `local.json`.
+4. Converts current selection boxes into active-site `rvc.json` regions relative to that origin.
+5. Preserves existing region IDs when a box keeps the same name, or when only the box name changes and bounds stay the same.
+6. Recaptures active-site tracked chunks from the current world; in singleplayer this uses integrated-server state.
+7. Commits updated `rvc.json` and chunk objects with message `update areas`.
 
-1. Read current Litematica area selection.
-2. Preview changed sub-regions.
-3. For semantic repos, update versioned `rvc.json` region definitions.
-4. For legacy repos, update versioned `index.json` sub-region definitions.
-5. Update `local.json` origin only if explicitly requested.
-6. Recommit updated area metadata and content.
-7. Refresh overlay/verifier when implemented for the repo format.
+Legacy `index.nbt` repos:
+
+- The button reports unsupported for now.
+
+Known gaps:
+
+- Needs richer preview of added/removed/renamed regions and bounds.
+- Needs explicit local-origin update controls.
+- Legacy `index.json` update areas is not implemented.
+- Semantic overlay/verifier refresh is blocked until semantic export/overlay exists.
 
 ## Future Diff/Merge/Inspect
 

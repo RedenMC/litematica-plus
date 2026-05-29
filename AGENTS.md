@@ -20,7 +20,7 @@ For broad repository orientation, start with `docs/agent/codebase-map.md`. For b
 ## Non-Negotiable RVC Rules
 
 - Git is the source of truth for history. Do not add `history.json` or another parallel commit ledger.
-- RVC project repos are Git repos under the game run directory's `repos/` folder.
+- RVC project repos are Git repos under the game run directory's `rvc-projects/` folder.
 - Versioned project state belongs in `index.json` and `index.nbt`.
 - Clone-local workspace state belongs in `local.json`; it must stay ignored by Git.
 - `index.json` owns shared sub-region definitions. `local.json` owns the clone-local Master Origin.
@@ -36,6 +36,7 @@ For broad repository orientation, start with `docs/agent/codebase-map.md`. For b
 - In newer `me.zly2006.rvc` code, use modern Java style: `!condition` is fine, and opening braces can stay on the same line when matching nearby code.
 - Avoid broad refactors in upstream Litematica areas unless the task explicitly requires them.
 - Keep RVC changes inside `me.zly2006.rvc` when possible. Only touch `fi.dy.masa.litematica` integration points for menu/buttons/placement/verifier hooks.
+- It is fine to reference upstream Litematica patterns, but prefer current Minecraft APIs in new RVC code instead of copying deprecated upstream calls.
 
 ## Important Source Areas
 

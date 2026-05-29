@@ -69,6 +69,8 @@ See `docs/tech/rvc-semantic-storage.md` for the semantic storage schema and `doc
 
 The Master Origin is intentionally local because the same RVC repo may be cloned into different Minecraft worlds or placed at different coordinates.
 
+RVC projects are portable by default. A repo is not hard-bound to the world folder that created it; `rvc.json` stores shared structure/site content, while `local.json` decides how this clone maps the active site into a local world through dimension, origin, and optional world hint. Loading a project in another world should be non-destructive. Any future restore/paste into that world must be an explicit, confirmed action after the user sets or accepts the local placement.
+
 ## Coordinate Model
 
 RVC uses a layered coordinate model:
@@ -104,17 +106,20 @@ Current semantic capture flow:
 9. Write object file only when missing.
 10. Update `rvc.json` chunk refs and commit with JGit.
 
+Manual semantic scan uses the same capture planning and hashing path, but resolves object IDs without writing object files and does not update `rvc.json`.
+
 Current reader implementations:
 
 - `RvcMinecraftWorldReader` reads a Minecraft `Level`.
+- `RvcProjectService` routes semantic init/commit/scan capture to the integrated server's matching `ServerLevel` in singleplayer when available, and runs that capture on the server thread.
 - Integration tests use fake `RvcWorldReader` implementations.
 
 Current limitations:
 
 - Scheduled block/fluid ticks are in the file format but not captured yet.
 - Entities are reserved in the file format but not captured yet.
-- Singleplayer manual testing currently uses client `Level`; final singleplayer should use integrated-server state.
-- Dedicated server support requires a server-side RVC path.
+- Client-only multiplayer capture still falls back to client `Level`; dedicated server support requires a server-side RVC path.
+- Dedicated-server support should investigate Servux first. Servux is a server-side Fabric mod for masa client mods, and current public metadata describes Litematica server-side save/paste support with full tile entity data.
 
 ## Structure Export Model
 
@@ -147,8 +152,11 @@ The `structure_void` step is essential. It prevents independent sub-region gaps 
 `RvcProjectService` owns higher-level repo operations:
 
 - Project path normalization and listing.
+- Confirmed project deletion support through a validated recursive repository delete.
 - Sub-region metadata read/write.
 - Semantic project init and commit dispatch for newly-created repos.
+- Manual active-site semantic scan and clean/dirty/unknown comparison.
+- Semantic active-site update areas from the current Litematica selection.
 - Commit history display.
 - Branch memory for detached checkout history.
 - Push/pull/remote helpers.
@@ -174,9 +182,9 @@ Semantic overlay/export/restore is not implemented yet. `RvcProjectService` curr
 
 Do not assume the PRD is fully implemented. Known current gaps include:
 
-- `Update areas` is still a TODO button.
+- Legacy `Update areas` is not implemented.
 - Semantic export/overlay/restore is not implemented.
-- Semantic scan changes is not implemented.
+- Semantic scan changes is implemented only for active-site manual scan/preflight data, not persistent stale tracking or dedicated-server authority.
 - `Inspect` is a message stub, not a real view.
 - Checkout/pull confirmation exists but still needs richer affected-region preview and better dirty/conflict handling.
 - Pull only reports coarse `OK`/`FAILED`.

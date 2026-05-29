@@ -9,7 +9,7 @@ This project is a Fabric/Loom Java mod repo based on Litematica, with a newer Gi
 - `settings.gradle` - plugin repositories.
 - `README.md` - short project description.
 - `docs/` - PRD, corrections, TODOs, and technical notes.
-- `run/` - local Minecraft run directory. RVC project repos are expected under `run/repos/` during local runs.
+- `run/` - local Minecraft run directory. RVC project repos are expected under `run/rvc-projects/` during local runs.
 - `bin/`, `build/`, `.gradle/`, `.idea/` - generated or local tooling state.
 
 ## RVC Package
@@ -33,7 +33,7 @@ All new RVC classes should live under `src/main/java/me/zly2006/rvc/`.
 - `RvcMinecraftWorldReader.java` - Minecraft `Level` reader for canonical block states and block entity NBT.
 - `RvcCanonicalNbt.java` - deterministic NBT writer used for block entity hashing.
 - `GuiRvcProject.java` - RVC project screen: commit, push, pull, checkout branch/commit, inspect stub, tracking status, confirmations.
-- `GuiRvcProjectManager.java` - lists valid RVC repos under the game run directory's `repos/` folder and opens project pages.
+- `GuiRvcProjectManager.java` - lists valid RVC repos under the game run directory's `rvc-projects/` folder and opens project pages.
 - `RvcPlayerIdentity.java` - converts the Minecraft player identity into a Git `PersonIdent`.
 
 ## Litematica Integration Points

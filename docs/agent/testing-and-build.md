@@ -50,7 +50,7 @@ Network-dependent Gradle commands may fail in restricted environments when depen
 - Vanilla `index.nbt` validation and compressed structure persistence.
 - Rejection of raw non-NBT bytes.
 - Commit parent behavior and newest-first history listing.
-- Project listing under `repos/`.
+- Project listing under `rvc-projects/`.
 - Push to a bare remote.
 - Pushing the remembered branch while HEAD is detached.
 - `local.json` ignored by Git.
@@ -73,9 +73,11 @@ Network-dependent Gradle commands may fail in restricted environments when depen
 - Untracked gaps in semantic chunks.
 - Changed fake-world content only changes intersecting chunk refs.
 - Local site origin mapping before world reads.
+- Semantic manual scan hashing without writing objects and unknown-chunk comparison.
 - Semantic repo init commits manifest/object files and excludes `local.json`.
 - Semantic no-op commit does not move `HEAD`.
 - Semantic update commit reuses unchanged chunk refs.
+- Semantic update-area region/chunk ref changes.
 
 ## Known Test Gaps
 
@@ -87,10 +89,10 @@ The current tests do not exercise:
 - GUI button interaction flows.
 - Pull conflict handling and auth failures.
 - Semantic export/overlay/restore.
-- Semantic manual scan changes.
 - Integrated-server/dedicated-server authoritative capture.
 - Scheduled tick capture.
 - Entity capture/cleanup/restore semantics.
-- Update-area, diff, merge, or branch creation workflows.
+- GUI update-area interaction flow.
+- Diff, merge, or branch creation workflows.
 
 Add tests proportional to risk. For RVC service changes, extend the integration suite first when behavior can be verified without a full Minecraft client. For GUI-only behavior, at least keep logic factored so service behavior remains testable.

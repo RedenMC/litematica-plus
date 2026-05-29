@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Objects;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
@@ -21,6 +22,12 @@ public final class RvcMinecraftWorldReader implements RvcWorldReader
     public RvcMinecraftWorldReader(Level world)
     {
         this.world = Objects.requireNonNull(world, "world");
+    }
+
+    @Override
+    public boolean canReadAt(RvcIntPosition worldPos)
+    {
+        return this.world.hasChunk(SectionPos.blockToSectionCoord(worldPos.x()), SectionPos.blockToSectionCoord(worldPos.z()));
     }
 
     @Override

@@ -40,6 +40,9 @@ RVC uses Git as the history/sync control plane and RVC semantic chunks as canoni
 - Updated project service behavior:
   - new projects created from the Litematica save flow now create semantic repos
   - commits against semantic repos capture active-site semantic chunks
+  - singleplayer semantic init/commit capture uses the integrated server's matching `ServerLevel` when available
+  - manual scan changes hashes active-site semantic chunks without writing objects or changing `rvc.json`
+  - `Update areas` updates active-site semantic regions from the current Litematica selection and commits current content
   - project manager accepts both semantic `rvc.json` repos and legacy `index.json` repos
   - semantic checkout/pull/overlay restore is explicitly blocked until export/restore exists
 - Added integration tests for semantic storage, fake-world capture, object reuse, manifest/local state, Minecraft block state encoding, canonical NBT, and semantic repo init/commit.
@@ -57,9 +60,12 @@ Only test semantic init/commit in singleplayer for now.
 Expected to work:
 
 - create a project from a Litematica area selection
-- repo appears under `run/repos/<project>`
+- repo appears under `run/rvc-projects/<project>`
 - repo contains `rvc.json`, `local.json`, `objects/sha256/**.rvcchunk`, `README.md`, `.gitignore`, and `.git`
 - commit after changing tracked blocks/block states/block entities
+- chest inventory/block entity changes should hash in singleplayer because capture reads integrated-server state
+- `Scan changes` reports clean after an unchanged commit and dirty after tracked block/block entity changes
+- `Update areas` can expand or shrink the tracked selection and commit the result
 - unchanged semantic chunks reuse old object hashes
 - exact no-op capture creates no Git commit at service level
 
@@ -69,8 +75,9 @@ Known not ready:
 - semantic pull restore
 - semantic overlay/verifier loading
 - export to `.litematic`
+- world association warnings for portable repos loaded in a different world
 - update/resize tracked regions
-- multiplayer/server-authoritative capture
+- dedicated-server authoritative capture
 - entity capture
 - scheduled tick capture
 
@@ -120,7 +127,7 @@ Verification:
 - canonical block state strings include all properties sorted by name
 - block entity NBT is deterministic and ignores absolute position
 - create-project flow initializes semantic repos from Litematica selections
-- semantic commit path captures from the current world
+- semantic init/commit captures from integrated-server `ServerLevel` in singleplayer when available
 
 Manual QA:
 
@@ -133,7 +140,7 @@ Manual QA:
 
 ### Slice 5: Semantic Commit UX Polish
 
-Status: next small slice.
+Status: done.
 
 Goal:
 
@@ -149,7 +156,7 @@ Verification:
 
 ### Slice 6: Manual Scan Changes
 
-Status: next core slice.
+Status: done for active semantic site.
 
 Goal:
 
@@ -163,9 +170,14 @@ Verification:
 - change outside tracked region reports clean
 - unloaded/unavailable authoritative chunk reports unknown
 
+Still pending:
+
+- Reuse scan result as preflight for commit/checkout/pull/reset/merge.
+- Dedicated-server authoritative scan path.
+
 ### Slice 7: Update Areas
 
-Status: pending.
+Status: done for active semantic site.
 
 Goal:
 
@@ -179,6 +191,12 @@ Verification:
 - shrinking a region removes chunk refs with no tracked positions
 - gaps remain untracked
 - overlapping same-site regions are rejected with clear message
+
+Still pending:
+
+- Legacy `index.json` update areas.
+- Rich preview of added/removed/renamed regions before commit.
+- Explicit local-origin update/move flow.
 
 ### Slice 8: Semantic Export/Overlay/Restore
 
@@ -199,14 +217,25 @@ Verification:
 
 ### Slice 9: Integrated-Server Authority
 
-Status: pending.
+Status: partially done for semantic init/commit.
 
 Goal:
 
 - In singleplayer, capture/scan/restore via integrated server state instead of client-only world state.
 
+Done:
+
+- Semantic init/commit resolves the integrated server's matching `ServerLevel`.
+- Capture runs on the server thread via `MinecraftServer#submit(...)`.
+- Manual semantic scan changes uses the same integrated-server capture path.
+
+Still pending:
+
+- Semantic restore/checkout/pull is still blocked until export/restore exists.
+
 Verification:
 
+- chest/container block entity inventory changes are captured from authoritative server state during init/commit
 - command/mod/world-simulation changes are captured from authoritative server state
 - unloaded tracked chunks are handled explicitly
 - client-only mismatch cannot be reported as clean
@@ -220,6 +249,12 @@ Goal:
 - Add server-side RVC path for multiplayer.
 - Client UI requests scan/commit/restore from server-side mod.
 - Refuse reliable commit/restore on servers without server-side support.
+
+Research note:
+
+- Investigate Servux first instead of designing from scratch.
+- Servux is a server-side Fabric mod for masa client mods and current metadata describes Litematica server-side save/paste support with full tile entity data.
+- Candidate sources: `https://modrinth.com/mod/servux`, `https://github.com/maruohon/servux`.
 
 Verification:
 
@@ -260,6 +295,5 @@ Verification:
 ## Current Highest Risks
 
 - Semantic projects cannot yet export/restore/overlay, so checkout and pull are blocked for them.
-- Capture currently uses client `Level`; this is acceptable for early singleplayer manual testing but not the final authoritative path.
-- `Update areas` is still missing, so users must oversize initial selections when testing growth.
-- GUI currently needs better semantic no-op commit feedback.
+- Client-only multiplayer capture is not authoritative; dedicated-server support needs a server-side RVC path.
+- `Update areas` has only the basic semantic active-site path; richer preview, legacy support, and explicit origin moves are still missing.

@@ -49,12 +49,16 @@ final class RvcSemanticStorageIntegrationTest
         IntegrationTestSupport.run("minecraft block state strings are canonical", RvcSemanticStorageIntegrationTest::minecraftBlockStateStringsAreCanonical);
         IntegrationTestSupport.run("canonical block entity nbt sorts keys and ignores position", RvcSemanticStorageIntegrationTest::canonicalBlockEntityNbtSortsKeysAndIgnoresPosition);
         IntegrationTestSupport.run("project service maps selection to semantic site", RvcSemanticStorageIntegrationTest::projectServiceMapsSelectionToSemanticSite);
+        IntegrationTestSupport.run("project service updates regions from existing local origin", RvcSemanticStorageIntegrationTest::projectServiceUpdatesRegionsFromExistingLocalOrigin);
         IntegrationTestSupport.run("capture stores gaps as untracked positions", RvcSemanticStorageIntegrationTest::captureStoresGapsAsUntrackedPositions);
         IntegrationTestSupport.run("capture changes only the intersecting storage chunk hash", RvcSemanticStorageIntegrationTest::captureChangesOnlyTheIntersectingStorageChunkHash);
         IntegrationTestSupport.run("capture applies local site origin before reading world", RvcSemanticStorageIntegrationTest::captureAppliesLocalSiteOriginBeforeReadingWorld);
+        IntegrationTestSupport.run("semantic scan hashes without writing objects", RvcSemanticStorageIntegrationTest::semanticScanHashesWithoutWritingObjects);
+        IntegrationTestSupport.run("semantic scan reports unavailable chunks as unknown", RvcSemanticStorageIntegrationTest::semanticScanReportsUnavailableChunksAsUnknown);
         IntegrationTestSupport.run("semantic repository init commits manifest and objects", RvcSemanticStorageIntegrationTest::semanticRepositoryInitCommitsManifestAndObjects);
         IntegrationTestSupport.run("semantic repository no-op commit reports no changes", RvcSemanticStorageIntegrationTest::semanticRepositoryNoOpCommitReportsNoChanges);
         IntegrationTestSupport.run("semantic repository commit updates only changed chunk reference", RvcSemanticStorageIntegrationTest::semanticRepositoryCommitUpdatesOnlyChangedChunkReference);
+        IntegrationTestSupport.run("semantic repository update areas changes regions and chunk refs", RvcSemanticStorageIntegrationTest::semanticRepositoryUpdateAreasChangesRegionsAndChunkRefs);
     }
 
     private static void semanticChunkEncodingIsDeterministicAndRoundTrips() throws Exception
@@ -247,6 +251,30 @@ final class RvcSemanticStorageIntegrationTest
         IntegrationTestSupport.assertEquals(List.of(10, 64, 10), placement.origin(), "local placement stores the world origin");
     }
 
+    private static void projectServiceUpdatesRegionsFromExistingLocalOrigin()
+    {
+        RvcManifest.Region existing = new RvcManifest.Region("line", "Line", List.of(0, 0, 0), List.of(1, 1, 1));
+        AreaSelection expandedSelection = areaSelectionFromBoxes(
+                "Farm",
+                List.of(boxJson("Line", new BlockPos(10, 64, 10), new BlockPos(26, 64, 10)))
+        );
+
+        List<RvcManifest.Region> expanded = RvcProjectService.createRegionsFromSelection(expandedSelection, new BlockPos(10, 64, 10), List.of(existing));
+
+        IntegrationTestSupport.assertEquals("line", expanded.get(0).id(), "same region name should preserve id while resizing");
+        IntegrationTestSupport.assertEquals(List.of(0, 0, 0), expanded.get(0).min(), "update areas should stay relative to existing local origin");
+        IntegrationTestSupport.assertEquals(List.of(17, 1, 1), expanded.get(0).size(), "expanded region size");
+
+        AreaSelection renamedSelection = areaSelectionFromBoxes(
+                "Farm",
+                List.of(boxJson("Renamed Line", new BlockPos(10, 64, 10), new BlockPos(10, 64, 10)))
+        );
+        List<RvcManifest.Region> renamed = RvcProjectService.createRegionsFromSelection(renamedSelection, new BlockPos(10, 64, 10), List.of(existing));
+
+        IntegrationTestSupport.assertEquals("line", renamed.get(0).id(), "same bounds should preserve id while renaming");
+        IntegrationTestSupport.assertEquals("Renamed Line", renamed.get(0).name(), "region display name should update");
+    }
+
     private static void captureStoresGapsAsUntrackedPositions() throws Exception
     {
         Path repoDir = Files.createTempDirectory("rvc-capture-gaps-");
@@ -294,6 +322,49 @@ final class RvcSemanticStorageIntegrationTest
 
         IntegrationTestSupport.assertTrue(reader.requestedPositions.contains(new RvcIntPosition(5, 64, 5)), "capture should read at local site origin");
         IntegrationTestSupport.assertTrue(reader.requestedPositions.contains(new RvcIntPosition(20, 64, 20)), "project-relative RVC chunk can cross Minecraft chunk boundaries after origin offset");
+    }
+
+    private static void semanticScanHashesWithoutWritingObjects() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-semantic-scan-");
+        RvcManifest.Site site = singleLineSite(1);
+        RvcLocalState.SitePlacement placement = placementAt(0, 0, 0);
+        FakeWorldReader reader = new FakeWorldReader("minecraft:stone");
+        RvcCaptureEngine.Result committed = RvcCaptureEngine.captureSite(repoDir, site, placement, reader);
+
+        reader.setBlock(new RvcIntPosition(8, 0, 0), "minecraft:dirt");
+        RvcCaptureEngine.Result outsideChangeScan = RvcCaptureEngine.scanSite(site, placement, reader);
+        RvcProjectService.SemanticScanResult clean = RvcProjectService.SemanticScanResult.compare("main", committed.chunkObjects(), outsideChangeScan);
+
+        IntegrationTestSupport.assertTrue(clean.clean(), "outside tracked region changes should scan as clean");
+        IntegrationTestSupport.assertEquals(1, clean.unchangedChunks(), "clean scan should count the tracked chunk as unchanged");
+
+        reader.setBlock(new RvcIntPosition(0, 0, 0), "minecraft:dirt");
+        RvcCaptureEngine.Result dirtyScan = RvcCaptureEngine.scanSite(site, placement, reader);
+        RvcProjectService.SemanticScanResult dirty = RvcProjectService.SemanticScanResult.compare("main", committed.chunkObjects(), dirtyScan);
+        String dirtyObjectId = dirtyScan.chunkObjects().get("0,0,0");
+
+        IntegrationTestSupport.assertEquals(1, dirty.changedChunks(), "tracked block changes should scan as changed");
+        IntegrationTestSupport.assertEquals(1, dirty.dirtyChunks(), "dirty chunk count");
+        IntegrationTestSupport.assertTrue(!Files.exists(RvcChunkStore.objectPath(repoDir, dirtyObjectId)), "scan must not write newly hashed chunk objects");
+    }
+
+    private static void semanticScanReportsUnavailableChunksAsUnknown() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-semantic-scan-unknown-");
+        RvcManifest.Site site = singleLineSite(17);
+        RvcLocalState.SitePlacement placement = placementAt(0, 0, 0);
+        FakeWorldReader reader = new FakeWorldReader("minecraft:stone");
+        RvcCaptureEngine.Result committed = RvcCaptureEngine.captureSite(repoDir, site, placement, reader);
+
+        reader.setUnavailable(new RvcIntPosition(16, 0, 0));
+        RvcCaptureEngine.Result scan = RvcCaptureEngine.scanSite(site, placement, reader);
+        RvcProjectService.SemanticScanResult result = RvcProjectService.SemanticScanResult.compare("main", committed.chunkObjects(), scan);
+
+        IntegrationTestSupport.assertEquals(1, result.unknownChunks(), "unavailable tracked data should be reported as unknown");
+        IntegrationTestSupport.assertEquals(1, result.unchangedChunks(), "available chunk should still compare clean");
+        IntegrationTestSupport.assertEquals(0, result.removedChunks(), "unknown chunks must not be treated as removed");
+        IntegrationTestSupport.assertTrue(!result.clean(), "unknown scan result is not clean");
     }
 
     private static void semanticRepositoryInitCommitsManifestAndObjects() throws Exception
@@ -363,6 +434,30 @@ final class RvcSemanticStorageIntegrationTest
         IntegrationTestSupport.assertTrue(!init.manifest().site("main").chunks().get("1,0,0").equals(update.manifest().site("main").chunks().get("1,0,0")), "changed chunk reference should update");
         IntegrationTestSupport.assertEquals(update.manifest().site("main").chunks(), RvcSemanticRepository.readManifest(repoDir).site("main").chunks(), "updated manifest should be written to disk");
         IntegrationTestSupport.assertEquals(update.commit().getId(), RvcRepository.resolveHead(repoDir), "semantic update commit should move HEAD");
+    }
+
+    private static void semanticRepositoryUpdateAreasChangesRegionsAndChunkRefs() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-semantic-areas-");
+        FakeWorldReader reader = new FakeWorldReader("minecraft:stone");
+        RvcSemanticRepository.CommitResult init = RvcSemanticRepository.initProject(repoDir, "Semantic Areas", singleLineSite(1), placementAt(0, 0, 0), reader, player("SemanticAreas"));
+        ObjectId initHead = RvcRepository.resolveHead(repoDir);
+
+        List<RvcManifest.Region> expandedRegions = List.of(new RvcManifest.Region("line", "Line", List.of(0, 0, 0), List.of(17, 1, 1)));
+        RvcSemanticRepository.CommitResult expanded = RvcSemanticRepository.updateSiteAreas(repoDir, init.manifest(), init.localState(), "main", expandedRegions, reader, player("SemanticAreas"), "expand area");
+
+        IntegrationTestSupport.assertNotNull(expanded.commit(), "expanded area should create a commit");
+        IntegrationTestSupport.assertTrue(!initHead.equals(expanded.commit().getId()), "expanded area should move HEAD");
+        IntegrationTestSupport.assertEquals(List.of(17, 1, 1), expanded.manifest().site("main").regions().get(0).size(), "expanded region should be versioned");
+        IntegrationTestSupport.assertEquals(2, expanded.manifest().site("main").chunks().size(), "17-block area should reference two RVC chunks");
+
+        List<RvcManifest.Region> shrunkRegions = List.of(new RvcManifest.Region("line", "Line", List.of(0, 0, 0), List.of(1, 1, 1)));
+        RvcSemanticRepository.CommitResult shrunk = RvcSemanticRepository.updateSiteAreas(repoDir, expanded.manifest(), expanded.localState(), "main", shrunkRegions, reader, player("SemanticAreas"), "shrink area");
+
+        IntegrationTestSupport.assertNotNull(shrunk.commit(), "shrunk area should create a commit");
+        IntegrationTestSupport.assertEquals(List.of(1, 1, 1), shrunk.manifest().site("main").regions().get(0).size(), "shrunk region should be versioned");
+        IntegrationTestSupport.assertEquals(1, shrunk.manifest().site("main").chunks().size(), "chunk refs with no tracked positions should leave the manifest");
+        IntegrationTestSupport.assertEquals(shrunk.commit().getId(), RvcRepository.resolveHead(repoDir), "semantic area update commit should move HEAD");
     }
 
     private static RvcManifest.Site validatedSingleSite(List<RvcManifest.Region> regions)
@@ -462,6 +557,7 @@ final class RvcSemanticStorageIntegrationTest
     {
         private final String defaultBlock;
         private final Map<RvcIntPosition, String> blocks = new HashMap<>();
+        private final Set<RvcIntPosition> unavailablePositions = new HashSet<>();
         private final Set<RvcIntPosition> requestedPositions = new HashSet<>();
 
         private FakeWorldReader(String defaultBlock)
@@ -472,6 +568,17 @@ final class RvcSemanticStorageIntegrationTest
         private void setBlock(RvcIntPosition pos, String blockState)
         {
             this.blocks.put(pos, blockState);
+        }
+
+        private void setUnavailable(RvcIntPosition pos)
+        {
+            this.unavailablePositions.add(pos);
+        }
+
+        @Override
+        public boolean canReadAt(RvcIntPosition worldPos)
+        {
+            return !this.unavailablePositions.contains(worldPos);
         }
 
         @Override

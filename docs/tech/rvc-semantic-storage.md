@@ -24,6 +24,9 @@ Implemented:
 - SHA-256 hashing through Java `MessageDigest`.
 - fake-world capture for integration tests.
 - Minecraft `Level` capture for block states and block entities.
+- singleplayer semantic init/commit routing to integrated-server `ServerLevel` when available.
+- manual active-site scan changes through the same hash path without writing objects or changing `rvc.json`.
+- active-site update areas from current Litematica selection, preserving local-only origin and recapturing content.
 - canonical block state strings with sorted properties.
 - canonical block entity NBT with sorted compound keys and absolute `x/y/z` removed.
 - semantic repo init and active-site commit.
@@ -34,11 +37,10 @@ Not implemented yet:
 - semantic export to `.litematic` or vanilla structure.
 - semantic overlay/verifier loading.
 - semantic checkout/pull restore.
-- manual scan changes.
-- update/resize tracked regions.
+- rich update-area preview and explicit local-origin moves.
 - pending block/fluid tick capture.
 - entity capture.
-- integrated-server/dedicated-server authoritative capture.
+- dedicated-server authoritative capture.
 
 ## Repository Layout
 
@@ -98,6 +100,7 @@ Consequences:
 - One RVC chunk may overlap multiple real Minecraft chunks or sections.
 - Scan/capture code must map RVC chunks to all touched authoritative world chunks.
 - The repo stores the build's coordinate system, not the Minecraft world chunk grid.
+- Dedicated-server authoritative capture/restore should investigate Servux first, since it already provides server-side support for masa client mods and Litematica server-side save/paste workflows.
 
 ## Manifest: `rvc.json`
 
@@ -370,7 +373,7 @@ MVP commit scope may be the active site only, but full-project commit should be 
 
 ## Scan Changes Flow
 
-Manual scan uses the same capture path without writing objects or changing `rvc.json`.
+Manual scan uses the same capture path without writing objects or changing `rvc.json`. The current MVP exposes this for the active site through the project GUI; future preflight should reuse the same result model for commit, checkout, pull, reset, and merge.
 
 1. Encode each current chunk in memory.
 2. Compute hash.

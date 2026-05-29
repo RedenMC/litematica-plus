@@ -46,6 +46,7 @@ public class RvcRepositoryIntegrationTest
         IntegrationTestSupport.run("raw index bytes are rejected instead of committed", RvcRepositoryIntegrationTest::rawIndexBytesAreRejectedInsteadOfCommitted);
         IntegrationTestSupport.run("commit uses current branch HEAD and history lists newest commits first", RvcRepositoryIntegrationTest::commitUsesCurrentBranchHeadAndHistoryListsNewestFirst);
         IntegrationTestSupport.run("project service lists valid repositories and pushes to a remote", RvcRepositoryIntegrationTest::projectServiceListsValidRepositoriesAndPushesToRemote);
+        IntegrationTestSupport.run("project service deletes valid repositories recursively", RvcRepositoryIntegrationTest::projectServiceDeletesValidRepositoriesRecursively);
         IntegrationTestSupport.run("remote URL config can be created and edited", RvcRepositoryIntegrationTest::remoteUrlConfigCanBeCreatedAndEdited);
         IntegrationTestSupport.run("push uses the last active branch while HEAD is detached", RvcRepositoryIntegrationTest::pushUsesLastActiveBranchWhileHeadIsDetached);
         IntegrationTestSupport.run("legacy local selection is local-only and ignored by Git", RvcRepositoryIntegrationTest::legacyLocalSelectionIsLocalOnlyAndIgnoredByGit);
@@ -107,7 +108,7 @@ public class RvcRepositoryIntegrationTest
     private static void projectServiceListsValidRepositoriesAndPushesToRemote() throws Exception
     {
         Path runDir = Files.createTempDirectory("rvc-run-");
-        Path reposDir = runDir.resolve("repos");
+        Path reposDir = RvcProjectService.reposDirectory(runDir);
         Path validRepo = reposDir.resolve("Valid Project");
         Path invalidRepo = reposDir.resolve("Not Git");
         RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderFour", UUID.fromString("123e4567-e89b-12d3-a456-426614174005"));
@@ -134,6 +135,36 @@ public class RvcRepositoryIntegrationTest
             IntegrationTestSupport.assertEquals(commit.getId(), masterId, "remote should receive pushed master branch");
             IntegrationTestSupport.assertTrue(pushStatuses.stream().anyMatch(status -> status.contains(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH)), "push status should report the pushed branch");
         }
+    }
+
+    private static void projectServiceDeletesValidRepositoriesRecursively() throws Exception
+    {
+        Path runDir = Files.createTempDirectory("rvc-delete-run-");
+        Path validRepo = RvcProjectService.repositoryDirectory(runDir, "Delete Me");
+        Path invalidRepo = RvcProjectService.reposDirectory(runDir).resolve("Not RVC");
+        RvcPlayerIdentity player = new RvcPlayerIdentity("BuilderDelete", UUID.fromString("123e4567-e89b-12d3-a456-426614174015"));
+
+        RvcRepository.commit(validRepo, "Delete Me", createTinyStructureTemplate(), player, "init");
+        Files.createDirectories(validRepo.resolve("scratch/nested"));
+        Files.writeString(validRepo.resolve("scratch/nested/untracked.txt"), "delete this", StandardCharsets.UTF_8);
+        Files.createDirectories(invalidRepo.resolve("scratch"));
+        Files.writeString(invalidRepo.resolve("scratch/keep.txt"), "keep this", StandardCharsets.UTF_8);
+
+        RvcProjectService.deleteProjectRepository(runDir, validRepo);
+
+        IntegrationTestSupport.assertTrue(!Files.exists(validRepo), "delete project should remove the whole repository directory");
+
+        try
+        {
+            RvcProjectService.deleteProjectRepository(runDir, invalidRepo);
+            throw new AssertionError("invalid RVC project directory should not be deleted");
+        }
+        catch (IOException e)
+        {
+            IntegrationTestSupport.assertTrue(e.getMessage().contains("Not a valid RVC project repository"), "invalid delete error should explain rejected directory");
+        }
+
+        IntegrationTestSupport.assertTrue(Files.exists(invalidRepo.resolve("scratch/keep.txt")), "invalid project delete must leave files intact");
     }
 
     private static void remoteUrlConfigCanBeCreatedAndEdited() throws Exception

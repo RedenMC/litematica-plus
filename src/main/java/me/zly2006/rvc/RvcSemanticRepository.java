@@ -81,6 +81,41 @@ public final class RvcSemanticRepository
         return new CommitResult(capturedManifest, localState, commit);
     }
 
+    public static CommitResult updateSiteAreas(Path repositoryDirectory, RvcManifest manifest, RvcLocalState localState,
+                                               String siteId, List<RvcManifest.Region> regions, RvcWorldReader worldReader,
+                                               RvcPlayerIdentity player, String message) throws IOException, GitAPIException
+    {
+        Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
+        Objects.requireNonNull(manifest, "manifest");
+        Objects.requireNonNull(localState, "localState");
+        Objects.requireNonNull(siteId, "siteId");
+        Objects.requireNonNull(regions, "regions");
+        Objects.requireNonNull(worldReader, "worldReader");
+        Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(message, "message");
+
+        if (message.isBlank())
+        {
+            throw new IllegalArgumentException("RVC commit message must not be blank");
+        }
+
+        RvcManifest.Site site = manifest.site(siteId);
+        RvcLocalState.SitePlacement placement = localState.sites().get(siteId);
+
+        if (placement == null)
+        {
+            throw new IOException("Missing local placement for RVC site: " + siteId);
+        }
+
+        RvcManifest.Site updatedSite = site.withRegions(regions);
+        RvcCaptureEngine.Result capture = RvcCaptureEngine.captureSite(repositoryDirectory, updatedSite, placement, worldReader);
+        RvcManifest capturedManifest = manifest.withSite(siteId, updatedSite.withChunks(capture.chunkObjects()));
+
+        writeProjectFiles(repositoryDirectory, capturedManifest, localState);
+        RevCommit commit = commitSemanticFiles(repositoryDirectory, player, message.trim(), false);
+        return new CommitResult(capturedManifest, localState, commit);
+    }
+
     public static RvcManifest readManifest(Path repositoryDirectory) throws IOException
     {
         return RvcManifest.fromJson(Files.readString(repositoryDirectory.resolve(MANIFEST), StandardCharsets.UTF_8));

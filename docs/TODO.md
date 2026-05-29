@@ -17,17 +17,21 @@ Done:
 - Deterministic block state storage.
 - Deterministic block entity NBT storage with absolute `x/y/z` removed.
 - Fake-world and Minecraft `Level` capture readers.
+- Singleplayer semantic init/commit capture uses integrated-server `ServerLevel` when available.
+- Manual active-site semantic scan hashes current tracked chunks without writing objects, uses the same integrated-server capture path, and reports clean/dirty/unknown in the project GUI.
+- Semantic active-site `Update areas` reads the current Litematica selection, updates versioned `rvc.json` regions, recaptures content, and commits.
 - Semantic repo init and commit through JGit.
 - Project listing supports both semantic `rvc.json` repos and legacy `index.json` repos.
+- Project browser delete is implemented with confirmation and validated recursive deletion under `run/rvc-projects`.
 - Integration coverage for semantic storage, object reuse, fake-world capture, canonical Minecraft state encoding, and semantic commits.
 
 Not done:
 
 - Semantic export/overlay/restore.
 - Semantic checkout/pull restore.
-- Manual scan changes.
-- Update areas for `rvc.json`.
-- Integrated-server/server-authoritative capture.
+- Legacy `index.json` update areas.
+- World association UX: projects remain portable, but `local.json` should eventually track current-world identity/hints and warn before using a repo in a different world.
+- Rich update-area preview and explicit origin-change controls.
 - Dedicated-server multiplayer support.
 - Scheduled tick capture.
 - Entity capture/restore.
@@ -56,20 +60,23 @@ Relevant files:
 - `src/main/java/me/zly2006/rvc/GuiRvcProject.java`
 - `src/main/java/me/zly2006/rvc/RvcProjectService.java`
 
-### Implement Manual `Scan Changes`
+### Extend Manual `Scan Changes` Into Preflight
 
 Current state:
 
-- Dirty state for semantic projects is not implemented.
-- Existing legacy verifier path is overlay-based and not the long-term semantic dirty model.
+- The semantic project page has a `Scan changes` button.
+- It hashes the active site's currently tracked semantic chunks without writing objects or changing `rvc.json`.
+- It compares current hashes to manifest chunk refs.
+- It reports clean, dirty, and unknown states.
+- In singleplayer it uses the same integrated-server `ServerLevel` path as semantic init/commit.
+- Existing legacy verifier path remains overlay-based and is not the long-term semantic dirty model.
 
 Required behavior:
 
-- Hash current tracked semantic chunks without writing objects or changing `rvc.json`.
-- Compare current hashes to manifest chunk refs.
-- Report clean, dirty, and unknown states.
-- Treat unavailable authoritative chunks as unknown, not clean.
-- Use the same scan as preflight for future commit/checkout/pull/reset/merge flows.
+- Reuse this scan as preflight for future commit/checkout/pull/reset/merge flows.
+- Add stale-state invalidation after world edits or time passing, so old clean scans are not treated as current.
+- Extend unknown handling to dedicated-server multiplayer through a server-side RVC path.
+- Keep unavailable authoritative chunks as unknown, not clean.
 
 Relevant files:
 
@@ -103,18 +110,18 @@ Relevant files:
 Current state:
 
 - The RVC project page has an `Update areas` button.
-- `GuiRvcProject.updateAreas()` only shows `TODO`.
-- Translation key `litematica.message.rvc_project.update_areas_todo` is still literally `TODO`.
-- Semantic repos freeze regions from the original Litematica selection until this is implemented.
+- For semantic repos, it reads the current Litematica area selection.
+- It updates versioned `rvc.json` region definitions for the active site.
+- It preserves `local.json` origin.
+- It recaptures the active site content and commits the updated regions/chunks.
+- It shows a basic confirmation with region count.
+- Legacy repos still report unsupported for this button.
 
 Required behavior:
 
-- Read the current Litematica area selection.
-- Show a confirmation/preview of changed sub-regions.
-- For semantic repos, update versioned `rvc.json` region definitions.
 - For legacy repos, update versioned `index.json` sub-region definitions.
+- Add a richer preview of changed sub-regions, bounds, added/removed tracked chunks, and region renames.
 - Update local-only `local.json` origin only if the user explicitly requests it.
-- Recommit the updated area metadata and content.
 - Refresh the in-game overlay/verifier after the update when supported for the repo format.
 
 Relevant files:
@@ -174,14 +181,16 @@ Current state:
 - Restore uses `Level#setBlock` on the current client world.
 - This is enough for local/integrated testing paths but may not be server-authoritative on multiplayer servers.
 - There is no permission check, command mode, or server-side apply path.
-- Semantic capture currently reads a client `Level`; this is acceptable only for early singleplayer manual testing.
+- Semantic init/commit capture now resolves integrated-server `ServerLevel` in singleplayer when available.
+- Client-only multiplayer semantic capture still falls back to the client `Level`, which is not authoritative.
+- Research note: Servux is likely the best model/path for dedicated-server support. It is a server-side Fabric mod for masa client mods, server-only on Modrinth, and 0.3.x added Litematica server-side saving/pasting with full tile entity data. See https://modrinth.com/mod/servux and https://github.com/maruohon/servux.
 
 Required behavior:
 
 - Decide the supported restore modes: single-player direct world write, integrated-server task, multiplayer command placement, or server-side RVC support.
+- Prefer investigating a Servux-backed or Servux-compatible server protocol before inventing a separate server mod path.
 - Refuse checkout/pull restore when the current world cannot be modified authoritatively.
 - Report a clear message instead of silently creating client-only visual changes.
-- For semantic capture, prefer integrated-server `ServerLevel` in singleplayer.
 - For dedicated servers, require server-side RVC support for reliable scan/commit/restore.
 
 Relevant files:
@@ -388,6 +397,33 @@ Relevant files:
 - `docs/tech/rvc-semantic-storage.md`
 
 ## P2 - UI Polish
+
+### Keep RVC UI Organized Like Litematica UI
+
+Current state:
+
+- `GuiRvcProjectManager` follows Litematica's `GuiListBase` + browser widget pattern.
+- `WidgetRvcProjectBrowser` mirrors `WidgetSchematicProjectBrowser`.
+- `GuiRvcProject` is still monolithic and owns history drawing, action buttons, remote flows, scan, update areas, checkout, pull, and confirmation listeners.
+
+Required behavior:
+
+- Keep screen-level workflow in `GuiRvc*` classes.
+- Move reusable list/browser rendering into `WidgetRvc*` classes.
+- Extract commit history into `WidgetRvcCommitList` and `WidgetRvcCommitEntry` when real history/diff/inspect work starts.
+- Avoid broad UI refactors until they directly support MVP workflows.
+- Consider package split later, for example `me.zly2006.rvc.gui` and `me.zly2006.rvc.gui.widget`, once the UI surface grows past a few screens.
+
+Priority note:
+
+- This is not an MVP blocker.
+- First good time to do it is while replacing the Inspect stub or adding real diff/history views.
+
+Relevant files:
+
+- `src/main/java/me/zly2006/rvc/GuiRvcProject.java`
+- `src/main/java/me/zly2006/rvc/GuiRvcProjectManager.java`
+- `src/main/java/me/zly2006/rvc/WidgetRvcProjectBrowser.java`
 
 ### Replace Raw Text History With A Proper List Widget
 

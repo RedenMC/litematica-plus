@@ -111,6 +111,40 @@ public record RvcManifest(
         return new RvcManifest(this.format, this.projectId, this.name, this.content, updatedSites).validate();
     }
 
+    public RvcManifest withSite(String siteId, Site updatedSite)
+    {
+        requireNotBlank(siteId, "site id");
+        requireNotNull(updatedSite, "updated site");
+
+        if (!siteId.equals(updatedSite.id()))
+        {
+            throw new IllegalArgumentException("Updated RVC site id does not match target site id: " + siteId);
+        }
+
+        List<Site> updatedSites = new java.util.ArrayList<>(this.sites.size());
+        boolean replaced = false;
+
+        for (Site site : this.sites)
+        {
+            if (site.id().equals(siteId))
+            {
+                updatedSites.add(updatedSite);
+                replaced = true;
+            }
+            else
+            {
+                updatedSites.add(site);
+            }
+        }
+
+        if (!replaced)
+        {
+            throw new IllegalArgumentException("Unknown RVC site id: " + siteId);
+        }
+
+        return new RvcManifest(this.format, this.projectId, this.name, this.content, updatedSites).validate();
+    }
+
     private static void requireEquals(String expected, String actual, String label)
     {
         if (!Objects.equals(expected, actual))
@@ -187,6 +221,11 @@ public record RvcManifest(
         public Site withChunks(Map<String, String> chunks)
         {
             return new Site(this.id, this.name, this.dimension, this.regions, chunks);
+        }
+
+        public Site withRegions(List<Region> regions)
+        {
+            return new Site(this.id, this.name, this.dimension, regions, this.chunks);
         }
 
         private void validate()
