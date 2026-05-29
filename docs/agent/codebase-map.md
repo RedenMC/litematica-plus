@@ -32,8 +32,9 @@ All new RVC classes should live under `src/main/java/me/zly2006/rvc/`.
 - `RvcWorldReader.java` - abstraction for block state/block entity reads.
 - `RvcMinecraftWorldReader.java` - Minecraft `Level` reader for canonical block states and block entity NBT.
 - `RvcCanonicalNbt.java` - deterministic NBT writer used for block entity hashing.
-- `GuiRvcProject.java` - RVC project screen: commit, push, pull, checkout branch/commit, inspect stub, tracking status, confirmations.
-- `GuiRvcProjectManager.java` - lists valid RVC repos under the game run directory's `rvc-projects/` folder and opens project pages.
+- `GuiRvcProject.java` - RVC project screen: commit, push, pull, checkout branch/commit, scan changes, update areas, tracking status, confirmations, commit history search/scrolling, and commit metadata display.
+- `GuiRvcProjectManager.java` - lists valid RVC repos under the game run directory's `rvc-projects/` folder and opens/deletes project pages.
+- `WidgetRvcProjectBrowser.java` - project-browser list widget, repository/directory filtering, selected-project summary panel, and RVC-specific scrollbar rendering.
 - `RvcPlayerIdentity.java` - converts the Minecraft player identity into a Git `PersonIdent`.
 
 ## Litematica Integration Points

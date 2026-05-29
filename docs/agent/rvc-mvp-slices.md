@@ -45,6 +45,13 @@ RVC uses Git as the history/sync control plane and RVC semantic chunks as canoni
   - `Update areas` updates active-site semantic regions from the current Litematica selection and commits current content
   - project manager accepts both semantic `rvc.json` repos and legacy `index.json` repos
   - semantic checkout/pull/overlay restore is explicitly blocked until export/restore exists
+- Polished the RVC project/project-manager UI:
+  - project browser delete confirmation and validated recursive delete under `run/rvc-projects`
+  - project browser navigation rooted at `rvc-projects`
+  - commit history search, row selection, mouse-wheel scrolling, and stable scrollbar gutter
+  - selected commit metadata panel with Title, Author, optional Description, Date, Version, and Changes
+  - conditional scrollbar rendering for history, metadata, and project browser panels
+  - sidebar action buttons anchored to align Close Project with the commit history panel bottom edge
 - Added integration tests for semantic storage, fake-world capture, object reuse, manifest/local state, Minecraft block state encoding, canonical NBT, and semantic repo init/commit.
 
 Verified with:
@@ -66,6 +73,8 @@ Expected to work:
 - chest inventory/block entity changes should hash in singleplayer because capture reads integrated-server state
 - `Scan changes` reports clean after an unchanged commit and dirty after tracked block/block entity changes
 - `Update areas` can expand or shrink the tracked selection and commit the result
+- project page commit history can be searched and scrolled
+- selected commit metadata shows title/author/date/version/changes and only shows a scrollbar if content overflows
 - unchanged semantic chunks reuse old object hashes
 - exact no-op capture creates no Git commit at service level
 

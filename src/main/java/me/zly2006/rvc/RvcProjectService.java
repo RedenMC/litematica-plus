@@ -41,6 +41,7 @@ import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.treewalk.TreeWalk;
 import org.eclipse.jgit.transport.SshTransport;
 import org.eclipse.jgit.transport.PushResult;
 import org.eclipse.jgit.transport.Transport;
@@ -509,17 +510,111 @@ public final class RvcProjectService
 
             for (RevCommit commit : git.log().add(historyStart).call())
             {
+                String fullMessage = commit.getFullMessage();
+                String shortMessage = commit.getShortMessage();
+
                 commits.add(new CommitInfo(
                         commit.getName(),
                         commit.getName().substring(0, Math.min(8, commit.getName().length())),
-                        commit.getShortMessage(),
+                        shortMessage,
+                        commitDescription(fullMessage, shortMessage),
                         commit.getAuthorIdent().getName(),
-                        COMMIT_TIME_FORMAT.format(commit.getAuthorIdent().getWhenAsInstant())
+                        COMMIT_TIME_FORMAT.format(commit.getAuthorIdent().getWhenAsInstant()),
+                        countSubRegionsAtCommit(repository, commit),
+                        ""
                 ));
             }
         }
 
         return List.copyOf(commits);
+    }
+
+    private static String commitDescription(String fullMessage, String shortMessage)
+    {
+        if (fullMessage == null || fullMessage.isBlank())
+        {
+            return "";
+        }
+
+        if (shortMessage == null || shortMessage.isBlank() || !fullMessage.startsWith(shortMessage))
+        {
+            return fullMessage.trim();
+        }
+
+        return fullMessage.substring(Math.min(shortMessage.length(), fullMessage.length())).strip();
+    }
+
+    private static int countSubRegionsAtCommit(Repository repository, RevCommit commit)
+    {
+        try
+        {
+            String manifestJson = readCommitTextFile(repository, commit, RvcSemanticRepository.MANIFEST);
+
+            if (manifestJson != null)
+            {
+                return countSemanticSubRegions(manifestJson);
+            }
+
+            String indexJson = readCommitTextFile(repository, commit, RvcRepository.INDEX_JSON);
+
+            if (indexJson != null)
+            {
+                return countLegacySubRegions(indexJson);
+            }
+        }
+        catch (IOException | RuntimeException e)
+        {
+            Litematica.LOGGER.debug("RvcProjectService: failed to count sub-regions for commit '{}': {}", commit.getName(), e.getMessage());
+        }
+
+        return -1;
+    }
+
+    @Nullable
+    private static String readCommitTextFile(Repository repository, RevCommit commit, String path) throws IOException
+    {
+        try (TreeWalk treeWalk = TreeWalk.forPath(repository, path, commit.getTree()))
+        {
+            if (treeWalk == null)
+            {
+                return null;
+            }
+
+            return new String(repository.open(treeWalk.getObjectId(0)).getBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static int countSemanticSubRegions(String manifestJson)
+    {
+        JsonObject manifest = JsonParser.parseString(manifestJson).getAsJsonObject();
+
+        if (!manifest.has("sites") || !manifest.get("sites").isJsonArray())
+        {
+            return -1;
+        }
+
+        int count = 0;
+
+        for (JsonElement siteElement : manifest.getAsJsonArray("sites"))
+        {
+            if (siteElement.isJsonObject())
+            {
+                JsonObject site = siteElement.getAsJsonObject();
+
+                if (site.has("regions") && site.get("regions").isJsonArray())
+                {
+                    count += site.getAsJsonArray("regions").size();
+                }
+            }
+        }
+
+        return count;
+    }
+
+    private static int countLegacySubRegions(String indexJson)
+    {
+        JsonObject index = JsonParser.parseString(indexJson).getAsJsonObject();
+        return index.has("sub_regions") && index.get("sub_regions").isJsonArray() ? index.getAsJsonArray("sub_regions").size() : -1;
     }
 
     public static void checkoutCommitToWorkingTree(Path repositoryDirectory, String commitId) throws GitAPIException, IOException
@@ -1467,7 +1562,8 @@ public final class RvcProjectService
     {
     }
 
-    public record CommitInfo(String id, String shortId, String message, String author, String time)
+    public record CommitInfo(String id, String shortId, String message, String description, String author, String time,
+                             int subRegionCount, String changes)
     {
     }
 

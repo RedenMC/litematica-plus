@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.List;
 import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.BlockPos;
 
 import fi.dy.masa.litematica.Litematica;
@@ -20,6 +21,7 @@ import fi.dy.masa.malilib.gui.widgets.WidgetDirectoryEntry;
 import fi.dy.masa.malilib.gui.widgets.WidgetFileBrowserBase;
 import fi.dy.masa.malilib.gui.widgets.WidgetFileBrowserBase.DirectoryEntry;
 import fi.dy.masa.malilib.gui.widgets.WidgetFileBrowserBase.DirectoryEntryType;
+import fi.dy.masa.malilib.gui.widgets.WidgetBase;
 import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.render.RenderUtils;
 import fi.dy.masa.malilib.util.StringUtils;
@@ -60,6 +62,131 @@ public class WidgetRvcProjectBrowser extends WidgetFileBrowserBase implements IS
     protected int getBrowserWidthForTotalWidth(int width)
     {
         return super.getBrowserWidthForTotalWidth(width) - this.infoWidth;
+    }
+
+    @Override
+    public boolean onMouseClicked(MouseButtonEvent click, boolean doubleClick)
+    {
+        if (this.hasScrollableEntries() && click.input() == 0 && this.scrollBar.wasMouseOver())
+        {
+            this.scrollBar.setIsDragging(true);
+            return true;
+        }
+
+        if (this.onMouseClickedSearchBar(click, doubleClick))
+        {
+            return true;
+        }
+
+        final int relativeY = (int) (click.y() - this.browserEntriesStartY - this.browserEntriesOffsetY);
+
+        if (relativeY >= 0 &&
+            click.x() >= this.browserEntriesStartX &&
+            click.x() < this.browserEntriesStartX + this.browserEntryWidth)
+        {
+            for (WidgetDirectoryEntry widget : this.listWidgets)
+            {
+                if (widget.isMouseOver((int) click.x(), (int) click.y()))
+                {
+                    if (widget.canSelectAt(click))
+                    {
+                        int entryIndex = widget.getListIndex();
+
+                        if (entryIndex >= 0 && entryIndex < this.listContents.size())
+                        {
+                            this.onEntryClicked(this.listContents.get(entryIndex), entryIndex);
+                        }
+                    }
+
+                    return widget.onMouseClicked(click, doubleClick);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    @Override
+    public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTicks)
+    {
+        RenderUtils.drawOutlinedBox(ctx, this.posX, this.posY, this.browserWidth, this.browserHeight, 0xB0000000, COLOR_HORIZONTAL_BAR);
+        this.drawBrowserContents(ctx, mouseX, mouseY, partialTicks);
+        this.drawAdditionalContents(ctx, mouseX, mouseY);
+    }
+
+    private void drawBrowserContents(GuiContext ctx, int mouseX, int mouseY, float partialTicks)
+    {
+        WidgetBase hovered = null;
+
+        if (this.hasScrollableEntries())
+        {
+            int scrollbarHeight = this.getScrollbarHeight();
+            int totalHeight = Math.max(this.getEntriesTotalHeight(), scrollbarHeight);
+            int scrollBarX = this.posX + this.browserWidth - 9;
+            int scrollBarY = this.browserEntriesStartY + this.browserEntriesOffsetY;
+            this.scrollBar.render(ctx, mouseX, mouseY, partialTicks, scrollBarX, scrollBarY, 8, scrollbarHeight, totalHeight);
+
+            if (this.scrollBar.getValue() != this.lastScrollbarPosition)
+            {
+                this.lastScrollbarPosition = this.scrollBar.getValue();
+                this.reCreateListEntryWidgets();
+            }
+        }
+        else
+        {
+            this.scrollBar.setIsDragging(false);
+        }
+
+        for (WidgetDirectoryEntry widget : this.listWidgets)
+        {
+            DirectoryEntry entry = widget.getEntry();
+            boolean isSelected = this.allowMultiSelection ? this.selectedEntries.contains(entry) : entry != null && entry.equals(this.getLastSelectedEntry());
+            widget.render(ctx, mouseX, mouseY, isSelected);
+
+            if (widget.isMouseOver(mouseX, mouseY))
+            {
+                hovered = widget;
+            }
+        }
+
+        if (this.widgetSearchBar != null)
+        {
+            this.widgetSearchBar.render(ctx, mouseX, mouseY, false);
+        }
+
+        if (hovered == null && this.widgetSearchBar != null && this.widgetSearchBar.isMouseOver(mouseX, mouseY))
+        {
+            hovered = this.widgetSearchBar;
+        }
+
+        this.hoveredWidget = hovered;
+    }
+
+    private boolean hasScrollableEntries()
+    {
+        return this.getEntriesTotalHeight() > this.getUsableEntriesHeight();
+    }
+
+    private int getScrollbarHeight()
+    {
+        return this.browserHeight - this.browserEntriesOffsetY - 8;
+    }
+
+    private int getEntriesTotalHeight()
+    {
+        int totalHeight = 0;
+
+        for (DirectoryEntry entry : this.listContents)
+        {
+            totalHeight += this.getBrowserEntryHeightFor(entry);
+        }
+
+        return totalHeight;
+    }
+
+    private int getUsableEntriesHeight()
+    {
+        return this.browserHeight - this.browserPaddingY - this.browserEntriesOffsetY;
     }
 
     @Override

@@ -23,6 +23,7 @@ Done:
 - Semantic repo init and commit through JGit.
 - Project listing supports both semantic `rvc.json` repos and legacy `index.json` repos.
 - Project browser delete is implemented with confirmation and validated recursive deletion under `run/rvc-projects`.
+- Project/project-manager UI polish: project browser navigation rooted at `rvc-projects`, conditional scrollbar rendering with stable gutters, searchable/scrollable commit history, and selected commit metadata with title/author/date/version/changes.
 - Integration coverage for semantic storage, object reuse, fake-world capture, canonical Minecraft state encoding, and semantic commits.
 
 Not done:
@@ -403,7 +404,7 @@ Relevant files:
 Current state:
 
 - `GuiRvcProjectManager` follows Litematica's `GuiListBase` + browser widget pattern.
-- `WidgetRvcProjectBrowser` mirrors `WidgetSchematicProjectBrowser`.
+- `WidgetRvcProjectBrowser` follows the Litematica browser pattern with RVC-specific repository filtering, selected-project summary, deletion refresh behavior, and conditional scrollbar rendering.
 - `GuiRvcProject` is still monolithic and owns history drawing, action buttons, remote flows, scan, update areas, checkout, pull, and confirmation listeners.
 
 Required behavior:
@@ -429,12 +430,13 @@ Relevant files:
 
 Current state:
 
-- `GuiRvcProject` manually draws history rows and manually places row buttons.
+- `GuiRvcProject` manually draws compact history rows with search, selection, mouse-wheel scrolling, and a stable scrollbar gutter.
+- History actions are currently handled by selected-row buttons outside the row, not row-level widgets.
 
 Required behavior:
 
-- Use or create a list widget with scrolling.
-- Keep buttons aligned for long messages and narrow screens.
+- Eventually extract history into a proper list widget when implementing real inspect/diff/history views.
+- Preserve current behavior: stable row layout, selected-row metadata, scroll support, and no row width jump when the scrollbar appears.
 - Add hover text for commit ids and actions.
 
 Relevant file:
