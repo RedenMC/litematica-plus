@@ -2,6 +2,9 @@
 
 This repository is a Litematica fork with an RVC feature layer. Treat the legacy `fi.dy.masa.litematica` code as upstream-style Litematica code and the `me.zly2006.rvc` package as the newer RVC implementation.
 
+## General Rules
+When talking to me, sacrifice grammar for the sake of conciseness and shortness.
+
 ## First Read
 
 When a task touches RVC behavior, read these in order:

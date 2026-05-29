@@ -284,8 +284,7 @@ public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase imple
                         repositoryName,
                         identity,
                         minecraft.level,
-                        selection,
-                        this.gui.checkboxIgnoreEntities.isChecked()
+                        selection
                 );
                 this.gui.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.created", result.repositoryDirectory(), result.commitId());
                 GuiBase.openGui(new GuiRvcProjectManager());

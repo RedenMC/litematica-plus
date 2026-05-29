@@ -1,5 +1,7 @@
 # RVC git based structure format
 
+Note: this document describes the older/current `index.nbt` implementation path. The new MVP storage direction is the semantic content-addressed chunk format in `docs/tech/rvc-semantic-storage.md`. When these conflict for new architecture work, follow `docs/prd-corrections.md` and `docs/tech/rvc-semantic-storage.md`.
+
 RVC 是把 Minecraft 结构版本接入 Git 的重大尝试。
 
 所有新的类必须写在me.zly2006.rvc包下。

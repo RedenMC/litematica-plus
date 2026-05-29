@@ -56,6 +56,7 @@ public class RvcRepositoryIntegrationTest
         IntegrationTestSupport.run("commit after checkout is rejected while HEAD is detached", RvcRepositoryIntegrationTest::commitAfterCheckoutIsRejectedWhileHeadIsDetached);
         IntegrationTestSupport.run("reset working tree to HEAD discards tracked dirty changes", RvcRepositoryIntegrationTest::resetWorkingTreeToHeadDiscardsTrackedDirtyChanges);
         IntegrationTestSupport.run("checkout can continue after resetting a dirty working tree", RvcRepositoryIntegrationTest::checkoutCanContinueAfterResettingDirtyWorkingTree);
+        RvcSemanticStorageIntegrationTest.runAll();
     }
 
     private static void rawIndexBytesAreRejectedInsteadOfCommitted() throws Exception

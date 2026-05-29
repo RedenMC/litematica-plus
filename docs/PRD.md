@@ -1,3 +1,133 @@
+## 3. Core Storage And Change Tracking Decisions
+
+RVC should use Git, but Git must not be expected to understand raw `.litematic` files or large compressed NBT blobs. Git is the VCS control plane: commits, branches, tags, remotes, authorship, history graph, merge base discovery, push, and pull. RVC is the schematic semantics layer: tracked volumes, block/entity/tick content, diffs, merges, world restore, overlays, and conflict UI.
+
+Detailed storage schema: `docs/tech/rvc-semantic-storage.md`.
+
+### 3.1 Canonical Storage Direction
+
+The long-term canonical repo format should be a semantic, chunked, content-addressed object store committed to Git.
+
+Example shape:
+
+```text
+repo/
+  rvc.json
+  objects/
+    sha256/
+      ab/
+        abc123.rvcchunk
+        def456.rvcchunk
+  local.json
+  .git/
+```
+
+`rvc.json` or equivalent manifest records project metadata, tracked sub-regions, and a mapping from project storage chunk coordinates to content hashes. The chunks are immutable content-addressed objects. If only one part of a large build changes, a commit should add or reference only the changed chunks while reusing the existing hashes for unchanged chunks.
+
+`.litematic`, vanilla structure `.nbt`, and other schematic files should be treated as import/export or generated cache formats, not the long-term canonical VCS storage format. They may be produced for compatibility with Litematica or Minecraft, but they should not be the primary unit Git is asked to diff, merge, or store repeatedly.
+
+Recommended chunk properties:
+
+- Small enough that localized edits do not rewrite huge objects, for example `16x16x16` or another measured storage-chunk size.
+- Deterministic serialization with stable ordering.
+- Content-addressed by a strong hash such as SHA-256.
+- Explicit distinction between tracked air and untracked space.
+- Block entities and optional entity data serialized in a normalized form.
+
+### 3.2 Versioned World State Scope
+
+RVC should version reproducible structure state, not every transient Minecraft server detail.
+
+Canonical tracked content:
+
+- Blocks and block states.
+- Block entity NBT, normalized.
+- Entities, if the project enables entity tracking.
+- Pending block ticks.
+- Pending fluid ticks.
+
+Out of scope by default:
+
+- Random tick future state.
+- Entity scheduler internals.
+- Block entity scheduler internals.
+- Neighbor update queues.
+- Mod-specific task queues.
+- Server event queues.
+- Any other transient simulation queues not exposed as stable block/fluid scheduled ticks.
+
+This keeps RVC aligned with what Litematica can practically preserve while avoiding a fragile attempt to snapshot the entire simulation engine.
+
+### 3.3 Scheduled Tick Policy
+
+RVC should store pending block ticks and pending fluid ticks. These are useful for exact-ish restore of water, fluids, redstone, and other delayed block/fluid updates. They should be treated as simulation metadata, not as normal user-authored build content.
+
+Default diff behavior:
+
+- Do not show every scheduled tick change in normal diff UI.
+- Summarize them as simulation state changes when useful.
+- Allow advanced inspection for exact tick details.
+
+Default merge behavior:
+
+- Scheduled ticks should not create normal user-facing merge conflicts.
+- A tick is kept only when it is valid for the final merged block/fluid state at that position.
+- If only one side changed a valid tick, keep it.
+- If both sides changed a tick identically and it remains valid, keep it.
+- If both sides changed a tick differently, or the final merged state does not clearly support the tick, drop the tick.
+- If a block/fluid conflict exists at that position, the resolved block/fluid choice owns the tick choice; invalid ticks are still dropped.
+- Show at most a summary such as `14 pending simulation updates reset`.
+
+Optional expert mode may provide strict scheduled-tick conflict handling for exact snapshot workflows, but the default product should preserve the build over half-tick simulation details.
+
+### 3.4 Dirty State And Change Detection
+
+RVC should detect changes by comparing final world state to committed chunk hashes. It should not rely on knowing why the world changed.
+
+This catches:
+
+- Manual block breaking and placing.
+- Water and fluid flow.
+- Redstone updates.
+- Commands and command blocks.
+- WorldEdit, Axiom, and similar tools.
+- Other mods, as long as the authoritative world state can be scanned.
+
+Event hooks may be used later as hints, but they are not the source of truth. A missed event must not cause RVC to claim the world is clean. Hooks can mark a project `STALE` or a chunk `MAYBE_DIRTY`; authoritative hash scans decide whether content is actually clean or dirty.
+
+RVC should support these status states:
+
+- `UNSCANNED`: no authoritative comparison has been run.
+- `SCANNING`: a scan is in progress.
+- `CLEAN`: the tracked content was verified equal at a specific commit and scan time.
+- `DIRTY`: one or more tracked chunks were verified different.
+- `STALE`: the world may have changed since the last verified scan.
+- `UNKNOWN`: one or more tracked chunks could not be scanned, usually because they are unloaded or the client/server lacks authority.
+
+Do not show `CLEAN` unless an authoritative scan has verified it.
+
+### 3.5 Scan UX And Server Authority
+
+RVC should not run continuous background full scans by default, even as a permanent design. Large Minecraft builds and multiplayer servers need predictable performance.
+
+Permanent workflow:
+
+- A `Scan Changes` button and hotkey lets the player manually request a full tracked-area scan.
+- Commit runs a mandatory preflight scan/export so the committed snapshot is exact.
+- Checkout, pull, reset, discard, and world-affecting merge operations run a mandatory preflight scan before overwriting tracked blocks.
+- If dirty content is found before a destructive operation, require an explicit user choice.
+- If scan result is `UNKNOWN`, block the operation or require an explicit override.
+
+Full scans should still be implemented incrementally:
+
+- Scan tracked storage chunks only.
+- Batch work across ticks.
+- Show progress.
+- Allow cancellation where safe.
+- Avoid freezing the client or server.
+
+Singleplayer uses the integrated server as the authoritative scan source. Multiplayer requires server-side RVC support for complete dirty detection and safe restore. A client-only multiplayer install can provide only approximate checks over loaded/synced chunks and must report unavailable chunks as `UNKNOWN`, not clean.
+
 ## 4.1 Project Initialization and Origin Management
 
 The initialization process converts a standard Litematica selection into a managed VCS project. This flow handles naming, area definition, and the first version save in one seamless sequence.
@@ -84,19 +214,19 @@ The system uses a layered coordinate system to ensure your build remains consist
 2. **Global Anchoring**: Each sub-region's position is, in turn, tracked relative to the **Project Origin** (the cyan box).
 3. **Structural Integrity**: This hierarchical approach ensures that the internal layout of your build is preserved within its boundaries, while the entire project remains locked to your master zero-point.
 
-### 4.2.3 Post-Save Feedback: Persistent Ghost Overlay
+### 4.2.3 Post-Save Feedback: Persistent Ghost Overlay And Verified Status
 
 Immediately after saving, the system engages "Tracking Mode" to help you visualize future changes.
 
 1. **Automatic Overlay**: The version you just saved is projected back into the world as a **Ghost Overlay**.
-2. **Real-Time Comparison**: As you continue working, the system constantly compares the physical blocks in the world to the saved ghost state.
-3. **Change Highlighting**: Any deviations from the saved version are instantly highlighted with color tints:
+2. **Verified Comparison**: RVC compares the physical world to the saved state when the user runs **Scan Changes** and during required preflight scans before operations such as save, checkout, pull, reset, and discard.
+3. **Change Highlighting**: Deviations found by a scan can be highlighted with color tints:
    - **Red**: The wrong block is in this position.
    - **Orange**: The block is correct, but its state is wrong (e.g., a repeater is on the wrong delay).
    - **Magenta**: A block from the save is missing in the world.
    - **Light Blue/Cyan**: An extra block exists in the world that was not in the save.
 
-4. **The Clean State**: If the physical build matches the save exactly, no highlights appear. This acts as a visual confirmation that there are no "unsaved changes."
+4. **The Clean State**: The project is shown as clean only after an authoritative scan verifies that the physical build matches the saved state. If the world may have changed after the last scan, the status becomes stale instead of clean.
 5. **Visibility Control**: You can toggle the ghost overlay and the highlights on or off at any time using standard Litematica rendering hotkeys.
 
 ### 4.2.4 The Discard Mechanism (Instant Reversion)
@@ -122,7 +252,7 @@ The **Discard Changes** function provides a rapid way to reset the workspace to 
 | Stage            | Action                      | Result                                                                 |
 | ---------------- | --------------------------- | ---------------------------------------------------------------------- |
 | **Trigger**      | Click **[Save Version]**    | Opens description prompt; records a new historical milestone.          |
-| **Tracking**     | Active Ghost Overlay        | Real-time color-coded comparison between world and save.               |
+| **Tracking**     | Active Ghost Overlay        | Saved state remains visible; scan results provide verified comparison. |
 | **Recovery**     | Click **[Discard Changes]** | **Triggers Warning Prompt**; physically reverts blocks to last commit. |
 | **Verification** | Color Highlighting          | Visual cues appear if the build deviates from the save.                |
 
@@ -136,7 +266,7 @@ This flow allows users to physically revert the world to a specific point in his
 
 1. **Select Version**: In the **Project Manager**, click on a specific commit entry to expand the **Context Menu**.
 2. **Initiate Checkout**: Click the **[Checkout]** button within the context menu.
-3. **Unsaved Changes Prompt**: The system checks the current world state against the last save. If discrepancies exist, the user is prompted to commit or discard changes before proceeding.
+3. **Unsaved Changes Prompt**: The system runs a preflight scan against the current world state. If discrepancies exist, the user is prompted to commit or discard changes before proceeding. If any tracked chunks cannot be scanned authoritatively, the operation is blocked or requires an explicit override.
 
 ### 4.3.2 Target Version Preview (Ghost Overlay)
 
@@ -144,7 +274,7 @@ Before the physical swap occurs, the system enters a Preview Mode:
 
 1. **Ghost Placement**: The selected target version is loaded as a Ghost Overlay in the world, mapped to the current Project Origin.
 2. **Visual Verification**: The user can walk around the build to see exactly where the blocks will land.
-3. **Real-Time Comparison**: The system highlights mismatches between the current physical world and the target ghost overlay using the standard color palette (Red/Orange/Magenta/Cyan). This shows the user exactly what will be added, removed, or changed if they proceed.
+3. **Preview Comparison**: The system highlights mismatches between the current physical world and the target ghost overlay using the standard color palette (Red/Orange/Magenta/Cyan). This shows the user exactly what will be added, removed, or changed if they proceed.
 
 ### 4.3.3 The Final Confirmation and Restoration
 
@@ -279,14 +409,20 @@ To prevent minor metadata fluctuations from cluttering the merge, entities use a
 2. **Tracked but Hidden**: System silently keeps the **Current** branch value to maintain consistency.
 3. **Untracked**: System discards both versions and applies **Default Values** to ensure a clean state.
 
-### C. Visual Conflict Audit (The "Merge Verifier")
+### C. Scheduled Block And Fluid Ticks
+
+Pending block ticks and pending fluid ticks are preserved as simulation metadata where possible, but they should not create normal merge conflicts.
+
+The merge keeps valid non-conflicting ticks, carries ticks from the chosen block/fluid side when a related block conflict is resolved, and drops invalid or ambiguous conflicting ticks. The UI may show a summary warning such as `Pending simulation updates reset`, but the user should not be forced to resolve individual tick entries in the default workflow.
+
+### D. Visual Conflict Audit (The "Merge Verifier")
 
 To facilitate rapid resolution, the system utilizes the same visual diagnostic tools as the History Diff mode:
 
 - **Standardized Color Palette**: All mismatches between branches are highlighted using the project's universal color code (e.g., **Red** for wrong blocks, **Orange** for wrong states, etc.).
 - **Component Clustering**: Just as in **4.4.5**, the system groups adjacent mismatched blocks or entities into logical clusters. These are wrapped in a glowing boundary, allowing the user to accept or reject an entire circuit update or machine module as a single unit rather than block-by-block.
 
-### D. The Trimming Protocol
+### E. The Trimming Protocol
 
 If any resolved data (Accepted blocks, resolved entities, or defaulted stats) sits outside the final boundaries of the box chosen in **4.6.1**, the system will **crop** that data. Only content physically contained within the final merged volume is preserved in the resulting commit.
 
@@ -301,6 +437,7 @@ If any resolved data (Accepted blocks, resolved entities, or defaulted stats) si
 | **Entities (Tracked)**   | Presence/Pose Mismatch | Manual Choice     |
 | **Entities (Hidden)**    | Physics/Rotation Diff  | Auto-Current      |
 | **Entities (Untracked)** | Status/Life Stats Diff | Auto-Default      |
+| **Block/Fluid Ticks**    | Simulation Diff        | Auto-Drop Invalid/Ambiguous |
 
 Stage,Logic,User Interaction
 

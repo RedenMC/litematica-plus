@@ -10,8 +10,11 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import javax.annotation.Nullable;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -72,7 +75,7 @@ public final class RvcProjectService
     {
     }
 
-    public static Result createProject(Path gameRunDirectory, String repositoryName, RvcPlayerIdentity player, Level world, AreaSelection selection, boolean ignoreEntities) throws Exception
+    public static Result createProject(Path gameRunDirectory, String repositoryName, RvcPlayerIdentity player, Level world, AreaSelection selection) throws Exception
     {
         Objects.requireNonNull(gameRunDirectory, "gameRunDirectory");
         Objects.requireNonNull(player, "player");
@@ -88,20 +91,59 @@ public final class RvcProjectService
         }
 
         Files.createDirectories(repositoryDirectory);
-        writeProjectMetadataWithSubRegions(repositoryDirectory, displayName, selection);
 
-        StructureTemplate structure = createStructureFromSelectionBoxes(world, getValidBoxes(selection), ignoreEntities);
-        RevCommit commit = RvcRepository.commit(repositoryDirectory, displayName, structure, player, "init");
+        String dimensionId = RvcMinecraftWorldReader.dimensionId(world);
+        RvcManifest.Site site = createMainSiteFromSelection(displayName, dimensionId, selection);
+        RvcLocalState.SitePlacement placement = createSitePlacement(selection.getEffectiveOrigin(), dimensionId);
+        RvcSemanticRepository.CommitResult result = RvcSemanticRepository.initProject(
+                repositoryDirectory,
+                displayName,
+                site,
+                placement,
+                new RvcMinecraftWorldReader(world),
+                player
+        );
+        RevCommit commit = result.commit();
 
         return new Result(repositoryDirectory, commit.getName());
     }
 
+    @Nullable
     public static RevCommit gitCommit(Path repositoryDirectory, String projectName, RvcPlayerIdentity player, Level world, @Nullable AreaSelection currentSelectionFallback, boolean ignoreEntities, String message) throws Exception
     {
         Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
         Objects.requireNonNull(player, "player");
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(message, "message");
+
+        if (isSemanticProject(repositoryDirectory))
+        {
+            RvcManifest manifest = RvcSemanticRepository.readManifest(repositoryDirectory);
+            RvcLocalState localState = RvcSemanticRepository.readLocalState(repositoryDirectory);
+            String siteId = localState.activeSite();
+            String worldDimension = RvcMinecraftWorldReader.dimensionId(world);
+            RvcLocalState.SitePlacement placement = localState.sites().get(siteId);
+
+            if (placement == null)
+            {
+                throw new IOException("Missing local placement for active RVC site: " + siteId);
+            }
+
+            if (!worldDimension.equals(placement.dimension()))
+            {
+                throw new IOException("Active RVC site is in " + placement.dimension() + " but current world is " + worldDimension);
+            }
+
+            return RvcSemanticRepository.commitSite(
+                    repositoryDirectory,
+                    manifest,
+                    localState,
+                    siteId,
+                    new RvcMinecraftWorldReader(world),
+                    player,
+                    normalizeCommitMessage(message)
+            ).commit();
+        }
 
         StructureTemplate structure = createStructureFromIndexSubRegionsOrFallbackToCurrentPositionUtilsGetValidBoxes(repositoryDirectory, world, currentSelectionFallback, ignoreEntities);
         return RvcRepository.commit(repositoryDirectory, projectName, structure, player, normalizeCommitMessage(message));
@@ -414,6 +456,11 @@ public final class RvcProjectService
         Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
         Objects.requireNonNull(projectName, "projectName");
 
+        if (isSemanticProject(repositoryDirectory))
+        {
+            throw new IOException("Semantic RVC overlay/export restore is not implemented yet");
+        }
+
         int trackedBoxCount = readTrackedBoxes(repositoryDirectory).size();
         BlockPos schematicWorldOrigin = resolveSchematicWorldOrigin(repositoryDirectory);
         Path structureFile = repositoryDirectory.resolve(RvcRepository.INDEX_STRUCTURE);
@@ -431,12 +478,22 @@ public final class RvcProjectService
 
     public static SchematicWorldRestore checkoutCommitToSchematicWorld(Path repositoryDirectory, String projectName, String commitId, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws GitAPIException, IOException
     {
+        if (isSemanticProject(repositoryDirectory))
+        {
+            throw new IOException("Semantic RVC checkout restore is not implemented yet");
+        }
+
         checkoutCommitToWorkingTree(repositoryDirectory, commitId);
         return restoreWorkingTreeToSchematicWorld(repositoryDirectory, projectName, clientLevel, completionListener);
     }
 
     public static SchematicWorldRestore checkoutBranchToSchematicWorld(Path repositoryDirectory, String projectName, String branchName, @Nullable ClientLevel clientLevel, @Nullable ICompletionListener completionListener) throws GitAPIException, IOException
     {
+        if (isSemanticProject(repositoryDirectory))
+        {
+            throw new IOException("Semantic RVC checkout restore is not implemented yet");
+        }
+
         checkoutBranchToWorkingTree(repositoryDirectory, branchName);
         return restoreWorkingTreeToSchematicWorld(repositoryDirectory, projectName, clientLevel, completionListener);
     }
@@ -538,6 +595,11 @@ public final class RvcProjectService
         Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
         Objects.requireNonNull(projectName, "projectName");
 
+        if (isSemanticProject(repositoryDirectory))
+        {
+            throw new IOException("Semantic RVC overlay/export restore is not implemented yet");
+        }
+
         Path structureFile = repositoryDirectory.resolve(RvcRepository.INDEX_STRUCTURE);
         LitematicaSchematic schematic = reloadLitematicaSchematic(structureFile);
 
@@ -581,7 +643,7 @@ public final class RvcProjectService
 
     private static boolean isValidProjectRepository(Path candidate)
     {
-        if (!Files.isDirectory(candidate.resolve(".git")) || !Files.isRegularFile(candidate.resolve(RvcRepository.INDEX_JSON)))
+        if (!Files.isDirectory(candidate.resolve(".git")) || (!Files.isRegularFile(candidate.resolve(RvcRepository.INDEX_JSON)) && !Files.isRegularFile(candidate.resolve(RvcSemanticRepository.MANIFEST))))
         {
             return false;
         }
@@ -594,6 +656,59 @@ public final class RvcProjectService
         {
             return false;
         }
+    }
+
+    public static boolean isSemanticProject(Path repositoryDirectory)
+    {
+        return Files.isRegularFile(repositoryDirectory.resolve(RvcSemanticRepository.MANIFEST));
+    }
+
+    static RvcManifest.Site createMainSiteFromSelection(String siteName, String dimensionId, AreaSelection selection)
+    {
+        Objects.requireNonNull(selection, "selection");
+        validateProjectName(siteName);
+
+        List<Box> boxes = new ArrayList<>(getValidBoxes(selection));
+        boxes.sort(Comparator.comparing(Box::getName));
+
+        if (boxes.isEmpty())
+        {
+            throw new IllegalArgumentException("RVC project has no valid area boxes");
+        }
+
+        BlockPos origin = selection.getEffectiveOrigin();
+        List<RvcManifest.Region> regions = new ArrayList<>();
+        Set<String> usedRegionIds = new HashSet<>();
+
+        for (Box box : boxes)
+        {
+            BlockPos pos1 = box.getPos1();
+            BlockPos pos2 = box.getPos2();
+
+            if (pos1 == null || pos2 == null)
+            {
+                continue;
+            }
+
+            BlockPos min = fi.dy.masa.litematica.util.PositionUtils.getMinCorner(pos1, pos2);
+            BlockPos max = fi.dy.masa.litematica.util.PositionUtils.getMaxCorner(pos1, pos2);
+            BlockPos relativeMin = min.subtract(origin);
+            BlockPos size = max.subtract(min).offset(1, 1, 1);
+            String regionName = box.getName();
+            regions.add(new RvcManifest.Region(
+                    uniqueRegionId(regionName, usedRegionIds),
+                    regionName,
+                    blockPosToList(relativeMin),
+                    blockPosToList(size)
+            ));
+        }
+
+        return new RvcManifest.Site("main", siteName, dimensionId, regions, Map.of());
+    }
+
+    static RvcLocalState.SitePlacement createSitePlacement(BlockPos origin, String dimensionId)
+    {
+        return new RvcLocalState.SitePlacement(dimensionId, blockPosToList(origin), "");
     }
 
     public static BlockPos resolveSchematicWorldOrigin(Path repositoryDirectory) throws IOException
@@ -703,6 +818,32 @@ public final class RvcProjectService
         arr.add(pos.getY());
         arr.add(pos.getZ());
         return arr;
+    }
+
+    private static List<Integer> blockPosToList(BlockPos pos)
+    {
+        return List.of(pos.getX(), pos.getY(), pos.getZ());
+    }
+
+    private static String uniqueRegionId(String name, Set<String> usedIds)
+    {
+        String base = name == null ? "" : name.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9_-]+", "_");
+
+        if (base.isBlank())
+        {
+            base = "region";
+        }
+
+        String candidate = base;
+        int index = 2;
+
+        while (!usedIds.add(candidate))
+        {
+            candidate = base + "_" + index;
+            index++;
+        }
+
+        return candidate;
     }
 
     @Nullable

@@ -6,6 +6,7 @@ import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import org.eclipse.jgit.revwalk.RevCommit;
 
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.selection.AreaSelection;
@@ -24,6 +25,11 @@ import fi.dy.masa.malilib.util.StringUtils;
 
 public class GuiRvcProject extends GuiBase implements ICompletionListener
 {
+    private static final int HISTORY_ROW_HEIGHT = 30;
+    private static final int HISTORY_METADATA_Y_OFFSET = 12;
+    private static final String SEMANTIC_CHECKOUT_UNSUPPORTED_KEY = "litematica.error.rvc_project.semantic_checkout_restore_unimplemented";
+    private static final String SEMANTIC_PULL_UNSUPPORTED_KEY = "litematica.error.rvc_project.semantic_pull_restore_unimplemented";
+
     private final Path repositoryDirectory;
     private final String projectName;
     private List<RvcProjectService.CommitInfo> history = List.of();
@@ -91,7 +97,9 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             return;
         }
 
-        int maxY = this.getScreenHeight() - 18;
+        int maxY = this.getScreenHeight() - HISTORY_ROW_HEIGHT;
+        int metadataX = x + 76;
+        int metadataMaxWidth = Math.max(40, this.getHistoryActionsStartX() - metadataX - 8);
 
         for (RvcProjectService.CommitInfo commit : this.history)
         {
@@ -102,8 +110,8 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
             ctx.drawString(ctx.fontRenderer(), commit.shortId(), x, y, 0xFFFFD36A, false);
             ctx.drawString(ctx.fontRenderer(), commit.message(), x + 76, y, 0xFFFFFFFF, false);
-            ctx.drawString(ctx.fontRenderer(), commit.author() + "  " + commit.time(), x + 280, y, 0xFFAAAAAA, false);
-            y += 18;
+            ctx.drawString(ctx.fontRenderer(), this.ellipsizeToWidth(commit.author() + "  " + commit.time(), metadataMaxWidth), metadataX, y + HISTORY_METADATA_Y_OFFSET, 0xFFAAAAAA, false);
+            y += HISTORY_ROW_HEIGHT;
         }
     }
 
@@ -118,11 +126,11 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     private void createHistoryButtons()
     {
         int y = this.getHistoryStartY() - 4;
-        int maxY = this.getScreenHeight() - 18;
+        int maxY = this.getScreenHeight() - HISTORY_ROW_HEIGHT;
         int checkoutWidth = this.getStringWidth(StringUtils.translate("litematica.gui.button.rvc_project.checkout")) + 16;
         int inspectWidth = this.getStringWidth(StringUtils.translate("litematica.gui.button.rvc_project.inspect")) + 16;
         int checkoutX = this.getScreenWidth() - checkoutWidth - 12;
-        int inspectX = checkoutX - inspectWidth - 4;
+        int inspectX = this.getHistoryActionsStartX();
 
         for (RvcProjectService.CommitInfo commit : this.history)
         {
@@ -133,8 +141,16 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
             this.addButton(new ButtonGeneric(inspectX, y - 4, inspectWidth, 18, StringUtils.translate("litematica.gui.button.rvc_project.inspect")), new HistoryButtonListener(HistoryAction.INSPECT, commit, this));
             this.addButton(new ButtonGeneric(checkoutX, y - 4, checkoutWidth, 18, StringUtils.translate("litematica.gui.button.rvc_project.checkout")), new HistoryButtonListener(HistoryAction.CHECKOUT, commit, this));
-            y += 18;
+            y += HISTORY_ROW_HEIGHT;
         }
+    }
+
+    private int getHistoryActionsStartX()
+    {
+        int checkoutWidth = this.getStringWidth(StringUtils.translate("litematica.gui.button.rvc_project.checkout")) + 16;
+        int inspectWidth = this.getStringWidth(StringUtils.translate("litematica.gui.button.rvc_project.inspect")) + 16;
+        int checkoutX = this.getScreenWidth() - checkoutWidth - 12;
+        return checkoutX - inspectWidth - 4;
     }
 
     private void createDetachedHeadButton()
@@ -226,6 +242,11 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         if (minecraft.level == null)
         {
             this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        if (this.reportSemanticUnsupported("litematica.error.rvc_project.checkout_failed", SEMANTIC_CHECKOUT_UNSUPPORTED_KEY))
+        {
             return;
         }
 
@@ -347,8 +368,24 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         try
         {
             RvcPlayerIdentity identity = new RvcPlayerIdentity(player.getName().getString(), player.getUUID());
-            RvcProjectService.gitCommit(this.repositoryDirectory, this.projectName, identity, world, selectionFallback, false, message);
-            this.loadTrackingOverlay();
+            RevCommit commit = RvcProjectService.gitCommit(this.repositoryDirectory, this.projectName, identity, world, selectionFallback, false, message);
+
+            if (commit == null)
+            {
+                this.initGui();
+                this.addMessage(MessageType.INFO, "litematica.message.rvc_project.nothing_to_commit");
+                return;
+            }
+
+            if (RvcProjectService.isSemanticProject(this.repositoryDirectory))
+            {
+                this.trackingStatus = StringUtils.translate("litematica.gui.label.rvc_project.semantic_tracking_unavailable");
+            }
+            else
+            {
+                this.loadTrackingOverlay();
+            }
+
             this.initGui();
             this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.committed");
         }
@@ -398,6 +435,11 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         if (minecraft.level == null)
         {
             this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        if (this.reportSemanticUnsupported("litematica.error.rvc_project.pull_failed", SEMANTIC_PULL_UNSUPPORTED_KEY))
+        {
             return;
         }
 
@@ -468,6 +510,17 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             this.addMessage(MessageType.ERROR, errorKey, e.getMessage());
             return null;
         }
+    }
+
+    private boolean reportSemanticUnsupported(String errorKey, String detailKey)
+    {
+        if (!RvcProjectService.isSemanticProject(this.repositoryDirectory))
+        {
+            return false;
+        }
+
+        this.addMessage(MessageType.ERROR, errorKey, StringUtils.translate(detailKey));
+        return true;
     }
 
     private void resetWorkingTreeThenPull()
@@ -565,6 +618,11 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         if (minecraft.level == null)
         {
             this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.no_world");
+            return;
+        }
+
+        if (this.reportSemanticUnsupported("litematica.error.rvc_project.checkout_failed", SEMANTIC_CHECKOUT_UNSUPPORTED_KEY))
+        {
             return;
         }
 

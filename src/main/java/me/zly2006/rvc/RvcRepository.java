@@ -5,9 +5,11 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 import javax.annotation.Nullable;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.Status;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.dircache.DirCache;
 import org.eclipse.jgit.lib.Constants;
@@ -91,18 +93,47 @@ public final class RvcRepository
 
     private static RevCommit commitRvcRepository(Path directory, RvcPlayerIdentity player, String message) throws IOException, GitAPIException
     {
+        RevCommit commit = commitFilePatterns(directory, player, message, List.of(INDEX_JSON, INDEX_STRUCTURE, README, GITIGNORE), true);
+
+        if (commit == null)
+        {
+            throw new IOException("RVC commit unexpectedly had no changes");
+        }
+
+        return commit;
+    }
+
+    @Nullable
+    static RevCommit commitFilePatterns(Path directory, RvcPlayerIdentity player, String message, List<String> filePatterns, boolean allowEmpty) throws IOException, GitAPIException
+    {
+        Objects.requireNonNull(directory, "directory");
+        Objects.requireNonNull(player, "player");
+        Objects.requireNonNull(message, "message");
+        Objects.requireNonNull(filePatterns, "filePatterns");
+
         try (Git git = openOrCreateGit(directory))
         {
             Repository repository = git.getRepository();
             requireCommittableHead(repository);
             ObjectId parent = repository.resolve(Constants.HEAD);
+            org.eclipse.jgit.api.AddCommand addCommand = git.add();
 
-            git.add()
-                    .addFilepattern(INDEX_JSON)
-                    .addFilepattern(INDEX_STRUCTURE)
-                    .addFilepattern(README)
-                    .addFilepattern(GITIGNORE)
-                    .call();
+            for (String filePattern : filePatterns)
+            {
+                addCommand.addFilepattern(filePattern);
+            }
+
+            addCommand.call();
+
+            if (!allowEmpty)
+            {
+                Status status = git.status().call();
+
+                if (status.isClean())
+                {
+                    return null;
+                }
+            }
 
             ObjectId commitId = createCommit(repository, player, parent, message);
 

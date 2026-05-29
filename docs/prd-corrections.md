@@ -195,6 +195,30 @@ Required direction:
 - Keep remote URL configuration local to the Git repository config.
 - Do not let the PRD's "hold off on Remotes & Cloning" note block remote sync work.
 
+### 9. Long-Term Storage Direction Is Git Plus Semantic Chunks
+
+The long-term RVC architecture should keep Git, but only as the version-control and synchronization control plane. Git should own commits, branches, tags, remotes, authorship, merge-base discovery, push, and pull. RVC should own schematic semantics.
+
+Detailed storage schema: `docs/tech/rvc-semantic-storage.md`.
+
+Do not design the long-term system around repeatedly committing raw `.litematic` files or one large compressed `index.nbt` as the canonical content object. Compressed binary schematic files are poor units for diff, merge, and scalable repository growth.
+
+Required long-term direction:
+
+- Use a semantic, deterministic, content-addressed chunk store as the canonical schematic content format.
+- Store project manifests in Git. The manifest maps tracked sub-regions and storage-chunk coordinates to immutable content hashes.
+- Reuse unchanged chunks across commits so repository growth is proportional to changed chunks, not full build size times commit count.
+- Treat `.litematic` and vanilla structure `.nbt` files as import/export or generated cache formats unless a later design explicitly accepts their scalability tradeoffs.
+- Keep explicit tracked air distinct from untracked space.
+
+RVC's canonical tracked content should include blocks, block states, normalized block entity NBT, optional entities, pending block ticks, and pending fluid ticks. It should not attempt to preserve random tick future state, entity scheduler internals, block entity scheduler internals, neighbor update queues, mod task queues, server event queues, or other transient simulation internals.
+
+Pending block/fluid ticks are simulation metadata. Store them, but do not make them normal user-facing merge conflicts. During merge, keep valid non-conflicting ticks, carry ticks from the chosen block/fluid side when applicable, and drop invalid or ambiguous conflicting ticks with at most a summary warning. Exact scheduled-tick conflict resolution may exist as an expert mode, but it should not be the default workflow.
+
+Dirty state must be based on authoritative hash scans of tracked storage chunks, not on event history. Event hooks may be used only as hints to mark state stale or maybe dirty. RVC should not run continuous background full scans by default. Instead, provide manual `Scan Changes` and mandatory preflight scans before commit, checkout, pull, reset, discard, and world-affecting merge operations. A clean state may only be shown after an authoritative scan verifies it.
+
+Singleplayer should use the integrated server as the authoritative scan/restore source. Multiplayer requires server-side RVC support for complete dirty detection and safe restore. Client-only multiplayer checks are approximate and must report unreadable or unloaded tracked chunks as unknown, not clean.
+
 ## Summary of Current Fix Priorities
 
 The following implemented areas are intentionally accepted:
@@ -209,6 +233,6 @@ The following areas have been fixed or deliberately bounded:
 
 - Shared sub-region definitions are versioned in `index.json`.
 - Master Origin is kept in local-only `local.json`.
-- `index.nbt` stores vanilla structure data. Untracked gaps inside the enclosing structure volume are written as `minecraft:structure_void`, not as real world blocks and not as air to be pasted over unrelated world space.
+- `index.nbt` currently stores vanilla structure data for the v1 compatibility path. This is accepted for current implementation work, but the long-term canonical storage direction is semantic content-addressed chunks. Untracked gaps inside the enclosing structure volume are written as `minecraft:structure_void`, not as real world blocks and not as air to be pasted over unrelated world space.
 - Post-commit, pull, and checkout all refresh the visible in-game state through world restoration and/or ghost overlay plus verifier.
 - History rows include `Inspect` and real `Checkout` actions.

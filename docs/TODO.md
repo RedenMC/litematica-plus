@@ -1,12 +1,102 @@
 # RVC TODO
 
-Last reviewed: 2026-05-07.
+Last reviewed: 2026-05-29.
 
 This document lists the remaining "do it later" work found during a review of the current RVC implementation. It focuses on RVC code and the Litematica UI paths touched by RVC.
 
 Important rule: if an operation changes the active RVC state, it must not stop at Git or filesystem changes. It must also update the visible in-game state: world blocks, ghost overlay, and verifier state where available.
 
+## Semantic MVP Status
+
+New RVC projects now use the semantic chunk storage direction described in `docs/tech/rvc-semantic-storage.md`.
+
+Done:
+
+- Semantic manifest/local state: `rvc.json` and local-only `local.json`.
+- Content-addressed `.rvcchunk` objects under `objects/sha256/`.
+- Deterministic block state storage.
+- Deterministic block entity NBT storage with absolute `x/y/z` removed.
+- Fake-world and Minecraft `Level` capture readers.
+- Semantic repo init and commit through JGit.
+- Project listing supports both semantic `rvc.json` repos and legacy `index.json` repos.
+- Integration coverage for semantic storage, object reuse, fake-world capture, canonical Minecraft state encoding, and semantic commits.
+
+Not done:
+
+- Semantic export/overlay/restore.
+- Semantic checkout/pull restore.
+- Manual scan changes.
+- Update areas for `rvc.json`.
+- Integrated-server/server-authoritative capture.
+- Dedicated-server multiplayer support.
+- Scheduled tick capture.
+- Entity capture/restore.
+
+Use `docs/agent/rvc-mvp-slices.md` as the current thin-slice plan.
+
 ## P0 - Correctness And Safety
+
+### Semantic Commit UX Polish
+
+Current state:
+
+- Semantic no-op commits return `null` at service level.
+- `GuiRvcProject` currently reports generic commit success and does not clearly distinguish real commit vs no-op.
+- Semantic commits also cannot reload overlay yet.
+
+Required behavior:
+
+- Show `nothing to commit` for semantic no-op commits.
+- Show successful commit only when a new Git commit is created.
+- Keep legacy `index.nbt` post-commit overlay reload behavior unchanged.
+- Do not surface semantic overlay/export absence as a failed commit.
+
+Relevant files:
+
+- `src/main/java/me/zly2006/rvc/GuiRvcProject.java`
+- `src/main/java/me/zly2006/rvc/RvcProjectService.java`
+
+### Implement Manual `Scan Changes`
+
+Current state:
+
+- Dirty state for semantic projects is not implemented.
+- Existing legacy verifier path is overlay-based and not the long-term semantic dirty model.
+
+Required behavior:
+
+- Hash current tracked semantic chunks without writing objects or changing `rvc.json`.
+- Compare current hashes to manifest chunk refs.
+- Report clean, dirty, and unknown states.
+- Treat unavailable authoritative chunks as unknown, not clean.
+- Use the same scan as preflight for future commit/checkout/pull/reset/merge flows.
+
+Relevant files:
+
+- `src/main/java/me/zly2006/rvc/RvcCaptureEngine.java`
+- `src/main/java/me/zly2006/rvc/RvcProjectService.java`
+- `src/main/java/me/zly2006/rvc/GuiRvcProject.java`
+
+### Implement Semantic Export, Overlay, And Restore
+
+Current state:
+
+- Semantic repos can init and commit.
+- Semantic checkout, pull restore, and overlay load are explicitly blocked.
+
+Required behavior:
+
+- Reconstruct a Litematica/vanilla-structure view from `rvc.json` chunk refs and `.rvcchunk` objects.
+- Preserve untracked gaps as `minecraft:structure_void` or equivalent non-overwrite behavior.
+- Load ghost overlay/verifier for semantic repo state.
+- Restore checked-out semantic state into tracked positions only.
+
+Relevant files:
+
+- `src/main/java/me/zly2006/rvc/RvcSemanticRepository.java`
+- `src/main/java/me/zly2006/rvc/RvcChunkCodec.java`
+- `src/main/java/me/zly2006/rvc/RvcProjectService.java`
+- `src/main/java/me/zly2006/rvc/GuiRvcProject.java`
 
 ### Implement `Update areas`
 
@@ -15,15 +105,17 @@ Current state:
 - The RVC project page has an `Update areas` button.
 - `GuiRvcProject.updateAreas()` only shows `TODO`.
 - Translation key `litematica.message.rvc_project.update_areas_todo` is still literally `TODO`.
+- Semantic repos freeze regions from the original Litematica selection until this is implemented.
 
 Required behavior:
 
 - Read the current Litematica area selection.
 - Show a confirmation/preview of changed sub-regions.
-- Update versioned `index.json` sub-region definitions.
-- Update local-only `local.json` Master Origin if the user explicitly requests it.
-- Recommit the updated area metadata and structure content.
-- Refresh the in-game overlay/verifier after the update.
+- For semantic repos, update versioned `rvc.json` region definitions.
+- For legacy repos, update versioned `index.json` sub-region definitions.
+- Update local-only `local.json` origin only if the user explicitly requests it.
+- Recommit the updated area metadata and content.
+- Refresh the in-game overlay/verifier after the update when supported for the repo format.
 
 Relevant files:
 
@@ -82,12 +174,15 @@ Current state:
 - Restore uses `Level#setBlock` on the current client world.
 - This is enough for local/integrated testing paths but may not be server-authoritative on multiplayer servers.
 - There is no permission check, command mode, or server-side apply path.
+- Semantic capture currently reads a client `Level`; this is acceptable only for early singleplayer manual testing.
 
 Required behavior:
 
 - Decide the supported restore modes: single-player direct world write, integrated-server task, multiplayer command placement, or server-side RVC support.
 - Refuse checkout/pull restore when the current world cannot be modified authoritatively.
 - Report a clear message instead of silently creating client-only visual changes.
+- For semantic capture, prefer integrated-server `ServerLevel` in singleplayer.
+- For dedicated servers, require server-side RVC support for reliable scan/commit/restore.
 
 Relevant files:
 
@@ -190,6 +285,26 @@ Relevant file:
 
 - `src/main/java/me/zly2006/rvc/RvcProjectService.java`
 
+### Replace Current SSH Key Handling And Remove EdDSA Crypto Dependency
+
+Current state:
+
+- SSH push/pull uses JGit with Apache SSHD.
+- Ed25519 keys may require the optional `net.i2p.crypto:eddsa:0.3.0` helper library.
+- That library is flagged by scanners for CVE-2020-36843, so it should not remain part of the long-term shipped dependency set.
+
+Required behavior:
+
+- Prefer a supported MVP SSH path based on RSA keys that does not require the vulnerable EdDSA helper library.
+- Document the MVP GitHub setup around RSA/OpenSSH-compatible keys.
+- Replace the SSH implementation with a safer path before broader release: local-only SSH key path config, clear connection test, passphrase handling if needed, and no vulnerable crypto dependency.
+- Remove `net.i2p.crypto:eddsa:0.3.0` from `build.gradle` once the replacement path is implemented and verified.
+
+Relevant files:
+
+- `build.gradle`
+- `src/main/java/me/zly2006/rvc/RvcProjectService.java`
+
 ### Open Newly Created Project Directly With Tracking State
 
 Current state:
@@ -248,26 +363,29 @@ Relevant file:
 
 - `src/main/java/me/zly2006/rvc/RvcProjectService.java`
 
-### Decide How To Store Large Binary Structure Data
+### Maintain Semantic Chunk Storage As The Canonical Large-Project Path
 
 Current state:
 
-- `index.nbt` is committed directly into Git.
+- New projects use semantic `.rvcchunk` objects and `rvc.json`.
+- Legacy repos may still commit `index.nbt` directly into Git.
 
 Risk:
 
-- Large builds can make repositories heavy.
-- GitHub sync may become slow or expensive.
+- Accidentally re-centering new work on `index.nbt` would lose the scalability benefits of semantic chunks.
 
 Required behavior:
 
-- Decide whether direct Git storage is acceptable for MVP.
-- If not, evaluate Git LFS or chunked storage.
-- Do not adopt PRD directory suggestions unless they fit the Git-backed model.
+- Treat `rvc.json` plus content-addressed chunks as canonical for new MVP work.
+- Keep `index.nbt` as legacy/compatibility or generated export/cache format.
+- Do not add `history.json`.
+- Do not adopt PRD directory suggestions unless they fit the Git-backed semantic model.
 
-Relevant file:
+Relevant files:
 
-- `src/main/java/me/zly2006/rvc/RvcRepository.java`
+- `src/main/java/me/zly2006/rvc/RvcSemanticRepository.java`
+- `src/main/java/me/zly2006/rvc/RvcChunkStore.java`
+- `docs/tech/rvc-semantic-storage.md`
 
 ## P2 - UI Polish
 
