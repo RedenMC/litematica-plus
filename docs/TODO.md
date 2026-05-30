@@ -23,7 +23,7 @@ Done:
 - Semantic repo init and commit through JGit.
 - Project listing supports both semantic `rvc.json` repos and legacy `index.json` repos.
 - Project browser delete is implemented with confirmation and validated recursive deletion under `run/rvc-projects`.
-- Project/project-manager UI polish: project browser navigation rooted at `rvc-projects`, conditional scrollbar rendering with stable gutters, searchable/scrollable commit history, and selected commit metadata with title/author/date/version/changes.
+- Project/project-manager UI polish: project browser navigation rooted at `rvc-projects`, conditional scrollbar rendering, searchable/scrollable commit history, and selected commit metadata with title/author/date/version/changes.
 - Integration coverage for semantic storage, object reuse, fake-world capture, canonical Minecraft state encoding, and semantic commits.
 
 Not done:
@@ -404,7 +404,7 @@ Relevant files:
 Current state:
 
 - `GuiRvcProjectManager` follows Litematica's `GuiListBase` + browser widget pattern.
-- `WidgetRvcProjectBrowser` follows the Litematica browser pattern with RVC-specific repository filtering, selected-project summary, deletion refresh behavior, and conditional scrollbar rendering.
+- `WidgetRvcProjectBrowser` follows the Litematica browser pattern with RVC-specific repository filtering, selected-project summary, deletion refresh behavior, full-width rows, and conditional scrollbar rendering.
 - `GuiRvcProject` is still monolithic and owns history drawing, action buttons, remote flows, scan, update areas, checkout, pull, and confirmation listeners.
 
 Required behavior:

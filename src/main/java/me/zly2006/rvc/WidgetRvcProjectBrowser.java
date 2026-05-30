@@ -81,8 +81,8 @@ public class WidgetRvcProjectBrowser extends WidgetFileBrowserBase implements IS
         final int relativeY = (int) (click.y() - this.browserEntriesStartY - this.browserEntriesOffsetY);
 
         if (relativeY >= 0 &&
-            click.x() >= this.browserEntriesStartX &&
-            click.x() < this.browserEntriesStartX + this.browserEntryWidth)
+            click.x() >= this.getBrowserEntryVisualX() &&
+            click.x() < this.getBrowserEntryVisualX() + this.getBrowserEntryVisualWidth())
         {
             for (WidgetDirectoryEntry widget : this.listWidgets)
             {
@@ -117,8 +117,21 @@ public class WidgetRvcProjectBrowser extends WidgetFileBrowserBase implements IS
     private void drawBrowserContents(GuiContext ctx, int mouseX, int mouseY, float partialTicks)
     {
         WidgetBase hovered = null;
+        boolean drawScrollbar = this.hasScrollableEntries();
 
-        if (this.hasScrollableEntries())
+        for (WidgetDirectoryEntry widget : this.listWidgets)
+        {
+            DirectoryEntry entry = widget.getEntry();
+            boolean isSelected = this.allowMultiSelection ? this.selectedEntries.contains(entry) : entry != null && entry.equals(this.getLastSelectedEntry());
+            widget.render(ctx, mouseX, mouseY, isSelected);
+
+            if (widget.isMouseOver(mouseX, mouseY))
+            {
+                hovered = widget;
+            }
+        }
+
+        if (drawScrollbar)
         {
             int scrollbarHeight = this.getScrollbarHeight();
             int totalHeight = Math.max(this.getEntriesTotalHeight(), scrollbarHeight);
@@ -135,18 +148,6 @@ public class WidgetRvcProjectBrowser extends WidgetFileBrowserBase implements IS
         else
         {
             this.scrollBar.setIsDragging(false);
-        }
-
-        for (WidgetDirectoryEntry widget : this.listWidgets)
-        {
-            DirectoryEntry entry = widget.getEntry();
-            boolean isSelected = this.allowMultiSelection ? this.selectedEntries.contains(entry) : entry != null && entry.equals(this.getLastSelectedEntry());
-            widget.render(ctx, mouseX, mouseY, isSelected);
-
-            if (widget.isMouseOver(mouseX, mouseY))
-            {
-                hovered = widget;
-            }
         }
 
         if (this.widgetSearchBar != null)
@@ -187,6 +188,16 @@ public class WidgetRvcProjectBrowser extends WidgetFileBrowserBase implements IS
     private int getUsableEntriesHeight()
     {
         return this.browserHeight - this.browserPaddingY - this.browserEntriesOffsetY;
+    }
+
+    private int getBrowserEntryVisualX()
+    {
+        return this.posX + 2;
+    }
+
+    private int getBrowserEntryVisualWidth()
+    {
+        return Math.max(0, this.browserWidth - 4);
     }
 
     @Override
@@ -260,7 +271,7 @@ public class WidgetRvcProjectBrowser extends WidgetFileBrowserBase implements IS
     @Override
     protected WidgetDirectoryEntry createListEntryWidget(int x, int y, int listIndex, boolean isOdd, DirectoryEntry entry)
     {
-        return new WidgetRvcProjectEntry(x, y, this.browserEntryWidth, this.getBrowserEntryHeightFor(entry),
+        return new WidgetRvcProjectEntry(x, y, this.getBrowserEntryVisualWidth(), this.getBrowserEntryHeightFor(entry),
                 isOdd, entry, listIndex, this, this.iconProvider);
     }
 

@@ -169,7 +169,7 @@ The RVC project UI intentionally treats Git as the history source and renders co
 Current UI invariants:
 
 - History rows are compact and row-scrollable. They reserve a stable scrollbar gutter so text layout does not change when overflow appears.
-- Scrollbars in RVC-owned panels are conditional: reserve the gutter for stable layout, but only draw the scrollbar when content actually overflows.
+- Scrollbars in RVC-owned panels are conditional: draw them only when content actually overflows. Commit history and metadata reserve content space for stable text layout; the project browser lets row backgrounds span under the scrollbar.
 - Commit metadata is a selected-commit detail panel, not a full diff view. It shows Title, Author, optional Description, Date, Version, and Changes.
 - `Changes` is a placeholder until semantic diffing exists.
 - Subregion data remains project metadata in manifests, but it is not currently shown in the commit metadata panel.

@@ -22,6 +22,7 @@ import fi.dy.masa.malilib.gui.GuiBase;
 import fi.dy.masa.malilib.gui.GuiConfirmAction;
 import fi.dy.masa.malilib.gui.GuiTextFieldGeneric;
 import fi.dy.masa.malilib.gui.GuiTextInput;
+import fi.dy.masa.malilib.gui.GuiTextInputStackedMultiLine;
 import fi.dy.masa.malilib.gui.Message.MessageType;
 import fi.dy.masa.malilib.gui.button.ButtonBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
@@ -30,6 +31,7 @@ import fi.dy.masa.malilib.gui.interfaces.IGuiIcon;
 import fi.dy.masa.malilib.gui.interfaces.ITextFieldListener;
 import fi.dy.masa.malilib.interfaces.IConfirmationListener;
 import fi.dy.masa.malilib.interfaces.ICompletionListener;
+import fi.dy.masa.malilib.interfaces.IStringDualConsumerFeedback;
 import fi.dy.masa.malilib.interfaces.IStringConsumerFeedback;
 import fi.dy.masa.malilib.render.GuiContext;
 import fi.dy.masa.malilib.render.RenderUtils;
@@ -42,9 +44,10 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     private static final int TOP_BUTTON_Y = 28;
     private static final int CONTENT_TOP_Y = 56;
     private static final int SEARCH_HEIGHT = 18;
-    private static final int HISTORY_HASH_RIGHT_PADDING = 8;
-    private static final int HISTORY_SCROLLBAR_GUTTER_WIDTH = 8;
-    private static final int HISTORY_SCROLLBAR_TRACK_RIGHT_OFFSET = 9;
+    private static final int HISTORY_TITLE_MAX_WIDTH = 132;
+    private static final int HISTORY_AUTHOR_MAX_WIDTH = 72;
+    private static final int HISTORY_HASH_SCROLLBAR_GAP = 2;
+    private static final int HISTORY_SCROLLBAR_TRACK_RIGHT_OFFSET = 5;
     private static final int HISTORY_SCROLLBAR_TRACK_WIDTH = 4;
     private static final int HISTORY_SCROLL_ROWS = 3;
     private static final int COMMIT_METADATA_SCROLL_STEP = 12;
@@ -57,6 +60,12 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     private static final int SIDEBAR_BUTTON_STEP = 24;
     private static final int COMMIT_METADATA_TEXT_COLOR = 0xFFB0B0B0;
     private static final int COMMIT_METADATA_VALUE_COLOR = 0xFFFFFFFF;
+    private static final int COMMIT_DESCRIPTION_DISPLAY_LINES = 4;
+    private static final int COMMIT_DESCRIPTION_MAX_LINES = 8;
+    private static final int COMMIT_DESCRIPTION_LABEL_VERTICAL_SPACE = 20;
+    private static final int COMMIT_DESCRIPTION_LABEL_FIELD_OFFSET = 16;
+    private static final int COMMIT_ERROR_VERTICAL_SPACE = 14;
+    private static final int COMMIT_ERROR_BOX_HEIGHT = 12;
     private static final String SEMANTIC_CHECKOUT_UNSUPPORTED_KEY = "litematica.error.rvc_project.semantic_checkout_restore_unimplemented";
     private static final String SEMANTIC_PULL_UNSUPPORTED_KEY = "litematica.error.rvc_project.semantic_pull_restore_unimplemented";
 
@@ -249,24 +258,15 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         int availableTextWidth = Math.max(20, hashX - x - 6);
         String title = commit.message();
         String author = " " + commit.author();
-        int titleWidth = this.getStringWidth(title);
-        int authorWidth = this.getStringWidth(author);
+        int authorMaxWidth = Math.min(HISTORY_AUTHOR_MAX_WIDTH, availableTextWidth);
+        String clippedAuthor = this.ellipsizeToWidth(author, authorMaxWidth);
+        int clippedAuthorWidth = this.getStringWidth(clippedAuthor);
+        int titleMaxWidth = Math.min(HISTORY_TITLE_MAX_WIDTH, Math.max(0, availableTextWidth - clippedAuthorWidth));
+        String clippedTitle = titleMaxWidth > 0 ? this.ellipsizeToWidth(title, titleMaxWidth) : "";
+        int clippedTitleWidth = this.getStringWidth(clippedTitle);
 
-        if (titleWidth + authorWidth <= availableTextWidth)
-        {
-            ctx.drawString(ctx.fontRenderer(), title, x, y, 0xFFFFFFFF, false);
-            ctx.drawString(ctx.fontRenderer(), author, x + titleWidth, y, 0xFF7A7A7A, false);
-        }
-        else if (authorWidth + 24 <= availableTextWidth)
-        {
-            String clippedTitle = this.ellipsizeToWidth(title, availableTextWidth - authorWidth);
-            ctx.drawString(ctx.fontRenderer(), clippedTitle, x, y, 0xFFFFFFFF, false);
-            ctx.drawString(ctx.fontRenderer(), author, x + this.getStringWidth(clippedTitle), y, 0xFF7A7A7A, false);
-        }
-        else
-        {
-            ctx.drawString(ctx.fontRenderer(), this.ellipsizeToWidth(title + author, availableTextWidth), x, y, 0xFFFFFFFF, false);
-        }
+        ctx.drawString(ctx.fontRenderer(), clippedTitle, x, y, 0xFFFFFFFF, false);
+        ctx.drawString(ctx.fontRenderer(), clippedAuthor, x + clippedTitleWidth, y, 0xFF7A7A7A, false);
 
         ctx.drawString(ctx.fontRenderer(), commit.shortId(), hashX, y, 0xFFFFD36A, false);
     }
@@ -296,21 +296,26 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
     private boolean commitMatchesSearch(RvcProjectService.CommitInfo commit, String[] tokens)
     {
-        String haystack = (commit.message() + "\n" +
+        String textHaystack = (commit.message() + "\n" +
                 commit.description() + "\n" +
-                commit.author() + "\n" +
-                commit.id() + "\n" +
-                commit.shortId()).toLowerCase(Locale.ROOT);
+                commit.author()).toLowerCase(Locale.ROOT);
+        String fullHash = commit.id().toLowerCase(Locale.ROOT);
+        String shortHash = commit.shortId().toLowerCase(Locale.ROOT);
 
         for (String token : tokens)
         {
-            if (!haystack.contains(token))
+            if (!textHaystack.contains(token) && !this.commitHashMatchesSearchToken(token, shortHash, fullHash))
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    private boolean commitHashMatchesSearchToken(String token, String shortHash, String fullHash)
+    {
+        return shortHash.startsWith(token) || fullHash.startsWith(token);
     }
 
     private void scrollHistory(double verticalAmount)
@@ -347,7 +352,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
     private int getHistoryHashRightPadding()
     {
-        return HISTORY_HASH_RIGHT_PADDING + HISTORY_SCROLLBAR_GUTTER_WIDTH;
+        return HISTORY_SCROLLBAR_TRACK_RIGHT_OFFSET + HISTORY_SCROLLBAR_TRACK_WIDTH + HISTORY_HASH_SCROLLBAR_GAP;
     }
 
     private boolean isMouseOverHistoryList(int mouseX, int mouseY)
@@ -432,9 +437,9 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
 
         this.addWrappedInlineMetadataLine(lines, "litematica.gui.label.rvc_project.info_title", this.selectedCommit.message(), maxWidth);
         this.addInlineMetadataLine(lines, "litematica.gui.label.rvc_project.info_author", this.selectedCommit.author(), maxWidth);
-        this.addDescriptionMetadataLines(lines, maxWidth);
         this.addInlineMetadataLine(lines, "litematica.gui.label.rvc_project.info_date", this.selectedCommit.time(), maxWidth);
         this.addInlineMetadataLine(lines, "litematica.gui.label.rvc_project.info_version", this.selectedCommit.shortId(), maxWidth);
+        this.addDescriptionMetadataLines(lines, maxWidth);
         this.addBlockMetadataLines(lines, "litematica.gui.label.rvc_project.info_changes", this.getChangesDisplayText(), maxWidth);
 
         return lines;
@@ -858,7 +863,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             return;
         }
 
-        GuiBase.openGui(new GuiTextInput(256, "litematica.gui.title.rvc_project.commit_message", "update schematic", this, new CommitMessageSetter(this)));
+        this.openCommitMessageDialog();
     }
 
     private void promptCheckoutBranch()
@@ -963,12 +968,26 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             this.updateTrackingStatusAfterRestore();
             this.initGui();
             this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project.checked_out_branch", RvcProjectService.DEFAULT_BRANCH, restore.boxCount());
-            GuiBase.openGui(new GuiTextInput(256, "litematica.gui.title.rvc_project.commit_message", "update schematic", this, new CommitMessageSetter(this)));
+            this.openCommitMessageDialog();
         }
         catch (Exception e)
         {
             this.addMessage(MessageType.ERROR, "litematica.error.rvc_project.checkout_failed", e.getMessage());
         }
+    }
+
+    private void openCommitMessageDialog()
+    {
+        GuiBase.openGui(new CommitMessageDialog(
+                256,
+                COMMIT_DESCRIPTION_DISPLAY_LINES,
+                COMMIT_DESCRIPTION_MAX_LINES,
+                "litematica.gui.title.rvc_project.commit_message",
+                "",
+                "",
+                this,
+                new CommitMessageSetter(this)
+        ));
     }
 
     private void commitStoredSelectionWithCurrentSelectionFallback(String message)
@@ -1582,6 +1601,139 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     {
     }
 
+    private static class CommitMessageDialog extends GuiTextInputStackedMultiLine
+    {
+        @Nullable private String errorMessage;
+        private boolean errorSpaceVisible;
+
+        public CommitMessageDialog(int maxTextLength, int displayLines, int maxLines, String titleKey, String defaultText1, String defaultText2,
+                                   GuiRvcProject parent, CommitMessageSetter consumer)
+        {
+            super(maxTextLength, displayLines, maxLines, titleKey, defaultText1, defaultText2, parent, consumer);
+            this.setWidthAndHeight(this.dialogWidth, this.dialogHeight + COMMIT_DESCRIPTION_LABEL_VERTICAL_SPACE);
+            this.textField2.setY(this.textField2.getY() + COMMIT_DESCRIPTION_LABEL_VERTICAL_SPACE);
+            this.textField2.setWidth(this.totalWidth);
+            this.textField1.setFocused(true);
+            this.textField2.setFocused(false);
+        }
+
+        @Override
+        public void initGui()
+        {
+            this.clearElements();
+
+            int x = this.dialogLeft + 10;
+            int y = this.getButtonY();
+
+            x += this.createButton(x, y, ButtonType.OK) + 2;
+            x += this.createButton(x, y, ButtonType.RESET) + 2;
+            this.createButton(x, y, ButtonType.CANCEL);
+        }
+
+        @Override
+        protected int createButton(int x, int y, ButtonType type)
+        {
+            String label = type == ButtonType.OK ?
+                    StringUtils.translate("litematica.gui.button.rvc_project.save") :
+                    type.getDisplayName();
+            ButtonGeneric button = new ButtonGeneric(x, y, -1, this.buttonHeight, label);
+            button.setWidth(Math.max(40, button.getWidth()));
+            return this.addButton(button, this.createActionListener(type)).getWidth();
+        }
+
+        @Override
+        public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTicks)
+        {
+            super.drawContents(ctx, mouseX, mouseY, partialTicks);
+            this.drawStringWithShadow(ctx, StringUtils.translate("litematica.gui.label.rvc_project.commit_description"),
+                    this.dialogLeft + 10, this.textField2.getY() - COMMIT_DESCRIPTION_LABEL_FIELD_OFFSET, COLOR_WHITE);
+
+            if (this.textField1.getValue().isEmpty())
+            {
+                ctx.drawString(ctx.fontRenderer(), StringUtils.translate("litematica.gui.label.rvc_project.commit_title_placeholder"),
+                        this.textField1.getX() + 4, this.textField1.getY() + 6, 0xFF777777, false);
+            }
+
+            if (this.textField2.getValue().isEmpty())
+            {
+                ctx.drawString(ctx.fontRenderer(), StringUtils.translate("litematica.gui.label.rvc_project.commit_description_optional"),
+                        this.textField2.getX() + 4, this.textField2.getY() + 5, 0xFF777777, false);
+            }
+
+            if (this.errorMessage != null)
+            {
+                int errorTop = this.getErrorTopY();
+                RenderUtils.drawOutlinedBox(ctx, this.dialogLeft + 10, errorTop, this.dialogWidth - 20, COMMIT_ERROR_BOX_HEIGHT, 0x80300000, 0xFFFF5555);
+                ctx.drawString(ctx.fontRenderer(), this.errorMessage, this.dialogLeft + 14, errorTop + 2, 0xFFFF5555, false);
+            }
+        }
+
+        private int getButtonY()
+        {
+            int errorSpace = this.errorSpaceVisible ? COMMIT_ERROR_VERTICAL_SPACE : 0;
+            return this.dialogTop + this.totalHeight + this.buttonHeight + 10 + COMMIT_DESCRIPTION_LABEL_VERTICAL_SPACE + errorSpace;
+        }
+
+        private int getErrorTopY()
+        {
+            int descriptionBottom = this.textField2.getY() + this.textField2.getHeight();
+            int availableSpace = Math.max(0, this.getButtonY() - descriptionBottom - COMMIT_ERROR_BOX_HEIGHT);
+            return descriptionBottom + availableSpace / 2;
+        }
+
+        @Override
+        public boolean onMouseClicked(MouseButtonEvent click, boolean doubleClick)
+        {
+            if (this.textField1.mouseClicked(click, doubleClick))
+            {
+                this.textField1.setFocused(true);
+                this.textField2.setFocused(false);
+                this.selectedBox = 1;
+                return true;
+            }
+            else if (this.textField2.mouseClicked(click, doubleClick))
+            {
+                this.textField1.setFocused(false);
+                this.textField2.setFocused(true);
+                this.selectedBox = 2;
+                return true;
+            }
+
+            this.textField1.setFocused(false);
+            this.textField2.setFocused(false);
+            return super.onMouseClicked(click, doubleClick);
+        }
+
+        @Override
+        protected boolean applyValues(String title, String description)
+        {
+            if (title == null || title.isBlank())
+            {
+                this.errorMessage = StringUtils.translate("litematica.error.rvc_project.commit_title_required");
+                this.showErrorSpace();
+                this.textField1.setFocused(true);
+                this.textField2.setFocused(false);
+                this.selectedBox = 1;
+                return false;
+            }
+
+            this.errorMessage = null;
+            return super.applyValues(title, description);
+        }
+
+        private void showErrorSpace()
+        {
+            if (this.errorSpaceVisible)
+            {
+                return;
+            }
+
+            this.errorSpaceVisible = true;
+            this.setWidthAndHeight(this.dialogWidth, this.dialogHeight + COMMIT_ERROR_VERTICAL_SPACE);
+            this.initGui();
+        }
+    }
+
     private enum ButtonType
     {
         SAVE_VERSION("litematica.gui.button.rvc_project.save_version", null),
@@ -1686,19 +1838,32 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         }
     }
 
-    private record CommitMessageSetter(GuiRvcProject gui) implements IStringConsumerFeedback
+    private record CommitMessageSetter(GuiRvcProject gui) implements IStringDualConsumerFeedback
     {
         @Override
-        public boolean setString(String message)
+        public boolean setStrings(String title, String description)
         {
-            if (message == null || message.isBlank())
+            if (title == null || title.isBlank())
             {
                 this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_project.commit_failed", "Commit message must not be blank");
                 return false;
             }
 
-            this.gui.commitStoredSelectionWithCurrentSelectionFallback(message);
+            this.gui.commitStoredSelectionWithCurrentSelectionFallback(this.fullCommitMessage(title, description));
             return true;
+        }
+
+        private String fullCommitMessage(String title, String description)
+        {
+            String trimmedTitle = title.strip();
+            String trimmedDescription = description == null ? "" : description.strip();
+
+            if (trimmedDescription.isBlank())
+            {
+                return trimmedTitle;
+            }
+
+            return trimmedTitle + "\n\n" + trimmedDescription;
         }
     }
 

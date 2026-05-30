@@ -40,7 +40,7 @@ Implementation:
 - The project browser `Delete Project` action shows a confirmation dialog, then recursively deletes only validated RVC repositories under `<game run dir>/rvc-projects/`.
 - After deletion, the browser clears selection, refreshes the directory listing, and reports success or failure in the GUI.
 - The browser can navigate subdirectories under `rvc-projects`; project repositories are shown as selectable project rows, while ordinary directories are used for navigation.
-- The browser uses a stable reserved scrollbar gutter, but only renders the scrollbar when entries overflow the visible list.
+- The browser uses full-width rows; when entries overflow, the conditional scrollbar renders on top of the row area instead of reserving a visible row gutter.
 
 ## Project Page UI
 
@@ -51,12 +51,12 @@ Entry point:
 Current behavior:
 
 - Commit history rows show title, author, and short hash. Date is kept in metadata, not the row.
-- Commit history search is in-memory token substring search over title/message, description, author, full hash, and short hash. It is not fuzzy search.
+- Commit history search is in-memory token search. Text fields use substring matching over title/message, description, and author; commit hashes only match by prefix against the visible short hash/full hash. It is not fuzzy search.
 - Commit history is row-scrollable with the mouse wheel when hovering the history list. Click selection maps through the current scroll offset.
 - Commit history reserves a stable right scrollbar gutter so row text/hash positions do not shift when the scrollbar appears. The row hover/selection background remains full width; only text avoids the gutter.
 - The history scrollbar is rendered only when the filtered history overflows.
 - The selected commit metadata panel is scrollable only when metadata overflows. It also reserves a stable scrollbar gutter while hiding the scrollbar when not needed.
-- Commit metadata currently shows Title, Author, optional Description, Date, Version, and Changes. Subregion count was removed from this panel.
+- Commit metadata currently shows Title, Author, Date, Version, optional Description, and Changes. Subregion count was removed from this panel.
 - Long titles wrap instead of being ellipsized. Description and Changes are shown as block fields with values on following indented lines.
 - The metadata panel extends down to the sidebar action buttons. The Project Editor, Project Settings, and Close Project buttons keep fixed spacing, and Close Project aligns visually with the bottom of the commit history panel.
 - `Changes` still reports `not calculated` until real semantic diff/change-list generation exists.
@@ -70,11 +70,11 @@ Entry point:
 Current behavior:
 
 1. Blocks commits on detached HEAD and prompts to checkout `master` first.
-2. Prompts for a non-blank message.
+2. Prompts for a non-blank commit title and an optional multi-line commit description.
 3. If the repo has `rvc.json`, reads semantic manifest and `local.json`.
 4. Captures the active site's tracked chunks through `RvcMinecraftWorldReader`; in singleplayer this uses the integrated server's matching `ServerLevel` on the server thread.
 5. Updates `rvc.json` chunk refs and writes missing `objects/sha256/**.rvcchunk` files.
-6. Commits semantic files through `RvcSemanticRepository`/`RvcRepository`.
+6. Commits semantic files through `RvcSemanticRepository`/`RvcRepository`; when a description is present it is written as the Git commit body after the title.
 7. If the repo is legacy `index.json`/`index.nbt`, uses the older structure export path and reloads overlay/verifier.
 8. If a semantic commit has no content changes, the service returns `null` and the GUI reports `Nothing to commit`.
 

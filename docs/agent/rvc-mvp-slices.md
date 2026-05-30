@@ -50,7 +50,7 @@ RVC uses Git as the history/sync control plane and RVC semantic chunks as canoni
   - project browser navigation rooted at `rvc-projects`
   - commit history search, row selection, mouse-wheel scrolling, and stable scrollbar gutter
   - selected commit metadata panel with Title, Author, optional Description, Date, Version, and Changes
-  - conditional scrollbar rendering for history, metadata, and project browser panels
+  - conditional scrollbar rendering for history, metadata, and project browser panels, with full-width project browser rows
   - sidebar action buttons anchored to align Close Project with the commit history panel bottom edge
 - Added integration tests for semantic storage, fake-world capture, object reuse, manifest/local state, Minecraft block state encoding, canonical NBT, and semantic repo init/commit.
 
