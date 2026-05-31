@@ -91,6 +91,8 @@ project_relative_pos = rvc_chunk_coord * chunk_size + local_chunk_pos
 
 An RVC chunk is a project-relative storage chunk, not a Minecraft chunk section.
 
+Semantic sub-regions are non-owning tracking masks. The effective tracked area is the union of all sub-region volumes for the active site, so overlapping sub-regions are allowed and a shared block coordinate is captured once into the relevant RVC chunk. Export should preserve the user-defined sub-region names/bounds, even if they overlap.
+
 ## Semantic Capture Model
 
 Current semantic capture flow:
@@ -98,7 +100,7 @@ Current semantic capture flow:
 1. Convert a Litematica selection into one MVP site named `main`.
 2. Store region definitions in `rvc.json`.
 3. Store the site origin and active site in local-only `local.json`.
-4. Build a tracked mask for every intersecting `16x16x16` RVC chunk.
+4. Build a union tracked mask for every intersecting `16x16x16` RVC chunk.
 5. Read tracked block states through `RvcWorldReader`.
 6. Read block entity NBT where available.
 7. Encode deterministic `.rvcchunk` bytes.
@@ -174,6 +176,9 @@ Current UI invariants:
 - `Changes` is a placeholder until semantic diffing exists.
 - Subregion data remains project metadata in manifests, but it is not currently shown in the commit metadata panel.
 - Sidebar action buttons are anchored from the bottom of the project content area so their bottom edge visually aligns with the commit history panel.
+- The Project Editor page is the MVP editor for the active semantic site only. It edits shared project name/sub-region metadata in `rvc.json`, edits local site origin in ignored `local.json`, and leaves content chunk recapture to Save Version/commit.
+- Project Browser can create empty semantic repos manually. These repos have `rvc.json`/`local.json` and `.git` but no commits, zero sub-regions, and no chunk refs until the user opens the project/editor, adds a sub-region, and saves the first version.
+- Multi-site UI, site-level restore, and temporary mixed-version site preview remain future workflows. The manifest can represent sites, but the MVP editor intentionally hides that complexity.
 
 ## Overlay And Verifier Model
 

@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import javax.annotation.Nullable;
@@ -74,7 +75,7 @@ public final class RvcProjectService
     public static final String LOCAL_JSON = "local.json";
     public static final String LOCAL_SELECTION_KEY = "local_selection";
     public static final String MASTER_ORIGIN_KEY = "master_origin";
-    public static final String DEFAULT_BRANCH = Constants.MASTER;
+    public static final String DEFAULT_BRANCH = "main";
     private static final String GIT_CONFIG_SECTION = "rvc";
     private static final String GIT_CONFIG_HISTORY_BRANCH_KEY = "historyBranch";
     private static final List<String> DEFAULT_SSH_IDENTITY_NAMES = List.of("id_ed25519", "id_ecdsa", "id_rsa", "id_dsa");
@@ -121,6 +122,36 @@ public final class RvcProjectService
         return new Result(repositoryDirectory, commit.getName());
     }
 
+    public static EmptyProjectResult createEmptyProject(Path gameRunDirectory, String repositoryName, BlockPos origin, String dimensionId) throws Exception
+    {
+        Objects.requireNonNull(gameRunDirectory, "gameRunDirectory");
+        Objects.requireNonNull(origin, "origin");
+        Objects.requireNonNull(dimensionId, "dimensionId");
+
+        String displayName = normalizeDisplayName(repositoryName);
+        validateProjectName(displayName);
+
+        if (dimensionId.isBlank())
+        {
+            throw new IllegalArgumentException("RVC project dimension must not be blank");
+        }
+
+        Path repositoryDirectory = repositoryDirectory(gameRunDirectory, displayName);
+
+        if (Files.exists(repositoryDirectory))
+        {
+            throw new FileAlreadyExistsException(repositoryDirectory.toString());
+        }
+
+        Files.createDirectories(repositoryDirectory);
+
+        RvcManifest.Site site = new RvcManifest.Site("main", displayName, dimensionId, List.of(), Map.of());
+        RvcLocalState.SitePlacement placement = createSitePlacement(origin, dimensionId);
+        RvcSemanticRepository.initEmptyProject(repositoryDirectory, displayName, site, placement);
+
+        return new EmptyProjectResult(repositoryDirectory, displayName);
+    }
+
     @Nullable
     public static RevCommit gitCommit(Path repositoryDirectory, String projectName, RvcPlayerIdentity player, Level world, @Nullable AreaSelection currentSelectionFallback, boolean ignoreEntities, String message) throws Exception
     {
@@ -146,6 +177,13 @@ public final class RvcProjectService
             if (!worldDimension.equals(placement.dimension()))
             {
                 throw new IOException("Active RVC site is in " + placement.dimension() + " but current world is " + worldDimension);
+            }
+
+            RvcManifest.Site site = manifest.site(siteId);
+
+            if (site.regions().isEmpty())
+            {
+                throw new IOException("Add at least one RVC sub-region before saving a version");
             }
 
             return runOnSemanticCaptureWorld(captureWorld, authoritativeWorld ->
@@ -490,6 +528,158 @@ public final class RvcProjectService
         }
 
         return new ProjectSummary(displayName, listCommits(repositoryDirectory).size(), origin);
+    }
+
+    public static ProjectEditorState readSemanticProjectEditorState(Path repositoryDirectory) throws IOException
+    {
+        ActiveSemanticProject project = readActiveSemanticProject(repositoryDirectory);
+        return new ProjectEditorState(
+                project.manifest().name(),
+                project.siteId(),
+                project.site().name(),
+                project.site().dimension(),
+                project.placement().dimension(),
+                blockPosFromList(project.placement().origin()),
+                project.placement().worldHint(),
+                project.site().regions()
+        );
+    }
+
+    public static void updateSemanticProjectName(Path repositoryDirectory, String projectName) throws IOException
+    {
+        Objects.requireNonNull(projectName, "projectName");
+        validateProjectName(projectName);
+
+        ActiveSemanticProject project = readActiveSemanticProject(repositoryDirectory);
+        String normalizedName = projectName.trim();
+        RvcManifest manifestWithSiteName = project.manifest().withSite(project.siteId(), project.site().withName(normalizedName));
+        RvcManifest updatedManifest = new RvcManifest(
+                manifestWithSiteName.format(),
+                manifestWithSiteName.projectId(),
+                normalizedName,
+                manifestWithSiteName.content(),
+                manifestWithSiteName.sites()
+        ).validate();
+
+        RvcSemanticRepository.writeVersionedProjectFiles(repositoryDirectory, updatedManifest);
+    }
+
+    public static void updateSemanticLocalOrigin(Path repositoryDirectory, BlockPos origin) throws IOException
+    {
+        Objects.requireNonNull(origin, "origin");
+        ActiveSemanticProject project = readActiveSemanticProject(repositoryDirectory);
+        Map<String, RvcLocalState.SitePlacement> placements = new TreeMap<>(project.localState().sites());
+        RvcLocalState.SitePlacement updatedPlacement = new RvcLocalState.SitePlacement(
+                project.placement().dimension(),
+                blockPosToList(origin),
+                project.placement().worldHint()
+        );
+
+        placements.put(project.siteId(), updatedPlacement);
+        RvcLocalState updatedLocalState = RvcLocalState.create(project.localState().projectId(), project.localState().activeSite(), placements);
+        RvcSemanticRepository.writeLocalState(repositoryDirectory, updatedLocalState);
+    }
+
+    public static void updateSemanticRegion(Path repositoryDirectory, String regionId, String name, BlockPos min, BlockPos size) throws IOException
+    {
+        Objects.requireNonNull(regionId, "regionId");
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(min, "min");
+        Objects.requireNonNull(size, "size");
+
+        if (name.isBlank())
+        {
+            throw new IllegalArgumentException("RVC region name must not be blank");
+        }
+
+        ActiveSemanticProject project = readActiveSemanticProject(repositoryDirectory);
+        List<RvcManifest.Region> regions = new ArrayList<>(project.site().regions().size());
+        boolean replaced = false;
+
+        for (RvcManifest.Region region : project.site().regions())
+        {
+            if (region.id().equals(regionId))
+            {
+                regions.add(new RvcManifest.Region(region.id(), name.trim(), blockPosToList(min), blockPosToList(size)));
+                replaced = true;
+            }
+            else
+            {
+                regions.add(region);
+            }
+        }
+
+        if (!replaced)
+        {
+            throw new IOException("Unknown RVC region id: " + regionId);
+        }
+
+        writeSemanticRegions(repositoryDirectory, project, regions);
+    }
+
+    public static RvcManifest.Region createSemanticRegion(Path repositoryDirectory, String name, BlockPos min, BlockPos size) throws IOException
+    {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(min, "min");
+        Objects.requireNonNull(size, "size");
+
+        if (name.isBlank())
+        {
+            throw new IllegalArgumentException("RVC region name must not be blank");
+        }
+
+        ActiveSemanticProject project = readActiveSemanticProject(repositoryDirectory);
+        Set<String> usedRegionIds = new HashSet<>();
+
+        for (RvcManifest.Region region : project.site().regions())
+        {
+            usedRegionIds.add(region.id());
+        }
+
+        RvcManifest.Region region = new RvcManifest.Region(
+                uniqueRegionId(name, usedRegionIds),
+                name.trim(),
+                blockPosToList(min),
+                blockPosToList(size)
+        );
+        List<RvcManifest.Region> regions = new ArrayList<>(project.site().regions());
+        regions.add(region);
+        writeSemanticRegions(repositoryDirectory, project, regions);
+        return region;
+    }
+
+    public static void deleteSemanticRegion(Path repositoryDirectory, String regionId) throws IOException
+    {
+        Objects.requireNonNull(regionId, "regionId");
+
+        ActiveSemanticProject project = readActiveSemanticProject(repositoryDirectory);
+
+        if (project.site().regions().size() <= 1)
+        {
+            throw new IOException("RVC project must keep at least one sub-region");
+        }
+
+        List<RvcManifest.Region> regions = new ArrayList<>(project.site().regions().size());
+        boolean removed = false;
+
+        for (RvcManifest.Region region : project.site().regions())
+        {
+            if (region.id().equals(regionId))
+            {
+                removed = true;
+            }
+            else
+            {
+                regions.add(region);
+            }
+        }
+
+        if (!removed)
+        {
+            throw new IOException("Unknown RVC region id: " + regionId);
+        }
+
+        writeSemanticRegions(repositoryDirectory, project, regions);
     }
 
     public static List<CommitInfo> listCommits(Path repositoryDirectory) throws IOException, GitAPIException
@@ -924,6 +1114,36 @@ public final class RvcProjectService
     {
         Objects.requireNonNull(candidate, "candidate");
         return isValidProjectRepository(candidate);
+    }
+
+    private static ActiveSemanticProject readActiveSemanticProject(Path repositoryDirectory) throws IOException
+    {
+        Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
+
+        if (!isSemanticProject(repositoryDirectory))
+        {
+            throw new IOException("Project editor currently supports semantic RVC projects only");
+        }
+
+        RvcManifest manifest = RvcSemanticRepository.readManifest(repositoryDirectory);
+        RvcLocalState localState = RvcSemanticRepository.readLocalState(repositoryDirectory);
+        String siteId = localState.activeSite();
+        RvcManifest.Site site = manifest.site(siteId);
+        RvcLocalState.SitePlacement placement = localState.sites().get(siteId);
+
+        if (placement == null)
+        {
+            throw new IOException("Missing local placement for active RVC site: " + siteId);
+        }
+
+        return new ActiveSemanticProject(manifest, localState, siteId, site, placement);
+    }
+
+    private static void writeSemanticRegions(Path repositoryDirectory, ActiveSemanticProject project,
+                                             List<RvcManifest.Region> regions) throws IOException
+    {
+        RvcManifest.Site updatedSite = project.site().withRegions(regions);
+        RvcSemanticRepository.writeVersionedProjectFiles(repositoryDirectory, project.manifest().withSite(project.siteId(), updatedSite));
     }
 
     private static void deleteRecursively(Path directory) throws IOException
@@ -1562,6 +1782,16 @@ public final class RvcProjectService
     {
     }
 
+    public record ProjectEditorState(String projectName, String siteId, String siteName, String siteDimension,
+                                     String localDimension, BlockPos localOrigin, String worldHint,
+                                     List<RvcManifest.Region> regions)
+    {
+        public ProjectEditorState
+        {
+            regions = List.copyOf(regions);
+        }
+    }
+
     public record CommitInfo(String id, String shortId, String message, String description, String author, String time,
                              int subRegionCount, String changes)
     {
@@ -1644,6 +1874,15 @@ public final class RvcProjectService
     }
 
     public record Result(Path repositoryDirectory, String commitId)
+    {
+    }
+
+    public record EmptyProjectResult(Path repositoryDirectory, String projectName)
+    {
+    }
+
+    private record ActiveSemanticProject(RvcManifest manifest, RvcLocalState localState, String siteId,
+                                         RvcManifest.Site site, RvcLocalState.SitePlacement placement)
     {
     }
 }

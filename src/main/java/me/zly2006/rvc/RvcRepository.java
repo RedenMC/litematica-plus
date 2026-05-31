@@ -189,7 +189,7 @@ public final class RvcRepository
             return;
         }
 
-        throw new IOException("RVC commit is disabled while HEAD is detached. Checkout master before committing.");
+        throw new IOException("RVC commit is disabled while HEAD is detached. Checkout " + RvcProjectService.DEFAULT_BRANCH + " before committing.");
     }
 
     private static Git openOrCreateGit(Path directory) throws GitAPIException, IOException
@@ -199,7 +199,7 @@ public final class RvcRepository
             return Git.open(directory.toFile());
         }
 
-        return Git.init().setDirectory(directory.toFile()).call();
+        return Git.init().setDirectory(directory.toFile()).setInitialBranch(RvcProjectService.DEFAULT_BRANCH).call();
     }
 
     private static void writeProjectMetadata(Path directory, String name) throws IOException

@@ -1,15 +1,19 @@
 package me.zly2006.rvc;
 
 import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Path;
 import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Player;
 
 import fi.dy.masa.litematica.Reference;
 import fi.dy.masa.litematica.gui.GuiMainMenu;
 import fi.dy.masa.malilib.gui.GuiBase;
 import fi.dy.masa.malilib.gui.GuiConfirmAction;
 import fi.dy.masa.malilib.gui.GuiListBase;
+import fi.dy.masa.malilib.gui.GuiTextInputBase;
 import fi.dy.masa.malilib.gui.Message.MessageType;
 import fi.dy.masa.malilib.gui.button.ButtonBase;
 import fi.dy.masa.malilib.gui.button.ButtonGeneric;
@@ -19,11 +23,18 @@ import fi.dy.masa.malilib.gui.widgets.WidgetDirectoryEntry;
 import fi.dy.masa.malilib.gui.widgets.WidgetFileBrowserBase.DirectoryEntry;
 import fi.dy.masa.malilib.gui.widgets.WidgetFileBrowserBase.DirectoryEntryType;
 import fi.dy.masa.malilib.interfaces.IConfirmationListener;
+import fi.dy.masa.malilib.render.GuiContext;
+import fi.dy.masa.malilib.render.RenderUtils;
 import fi.dy.masa.malilib.util.StringUtils;
 
 public class GuiRvcProjectManager extends GuiListBase<DirectoryEntry, WidgetDirectoryEntry, WidgetRvcProjectBrowser>
         implements ISelectionListener<DirectoryEntry>
 {
+    private static final int CREATE_PROJECT_ERROR_VERTICAL_SPACE = 14;
+    private static final int CREATE_PROJECT_ERROR_BOX_HEIGHT = 12;
+    private static final int CREATE_PROJECT_ERROR_HORIZONTAL_INSET = 1;
+    private static final int CREATE_PROJECT_ERROR_COLOR = 0xFFFF5555;
+
     public GuiRvcProjectManager()
     {
         super(10, 30);
@@ -129,6 +140,29 @@ public class GuiRvcProjectManager extends GuiListBase<DirectoryEntry, WidgetDire
         GuiBase.openGui(new GuiRvcProject(entry.getFullPath(), entry.name()));
     }
 
+    private void promptCreateProject()
+    {
+        GuiBase.openGui(new CreateProjectDialog(this));
+    }
+
+    private void createEmptyProject(String projectName) throws Exception
+    {
+        Minecraft minecraft = Minecraft.getInstance();
+        Player player = minecraft.player;
+        BlockPos origin = player != null ? fi.dy.masa.malilib.util.position.PositionUtils.getEntityBlockPos(player) : BlockPos.ZERO;
+        String dimensionId = minecraft.level != null ? RvcMinecraftWorldReader.dimensionId(minecraft.level) : "minecraft:overworld";
+        RvcProjectService.EmptyProjectResult result = RvcProjectService.createEmptyProject(minecraft.gameDirectory.toPath(), projectName, origin, dimensionId);
+        WidgetRvcProjectBrowser listWidget = this.getListWidget();
+
+        if (listWidget != null)
+        {
+            listWidget.refreshEntries();
+        }
+
+        this.reCreateGuiElements();
+        this.addMessage(MessageType.SUCCESS, "litematica.message.rvc_project_manager.project_created", result.projectName());
+    }
+
     private void confirmDeleteSelectedProject()
     {
         DirectoryEntry entry = this.getSelectedProjectEntry();
@@ -189,6 +223,102 @@ public class GuiRvcProjectManager extends GuiListBase<DirectoryEntry, WidgetDire
         }
     }
 
+    private static class CreateProjectDialog extends GuiTextInputBase
+    {
+        private final GuiRvcProjectManager gui;
+        @Nullable private String errorMessage;
+        private boolean errorSpaceVisible;
+
+        private CreateProjectDialog(GuiRvcProjectManager gui)
+        {
+            super(128, "litematica.gui.title.rvc_project_manager.create_project", "", gui);
+            this.gui = gui;
+        }
+
+        @Override
+        public void initGui()
+        {
+            this.clearElements();
+
+            int x = this.dialogLeft + 10;
+            int y = this.getButtonY();
+
+            x += this.createButton(x, y, ButtonType.OK) + 2;
+            x += this.createButton(x, y, ButtonType.RESET) + 2;
+            this.createButton(x, y, ButtonType.CANCEL);
+        }
+
+        @Override
+        public void drawContents(GuiContext ctx, int mouseX, int mouseY, float partialTicks)
+        {
+            super.drawContents(ctx, mouseX, mouseY, partialTicks);
+
+            if (this.errorMessage != null)
+            {
+                int errorTop = this.getErrorTopY();
+                int errorLeft = this.textField.getX() + CREATE_PROJECT_ERROR_HORIZONTAL_INSET;
+                int errorWidth = this.textField.getWidth() - CREATE_PROJECT_ERROR_HORIZONTAL_INSET * 2;
+                RenderUtils.drawOutlinedBox(ctx, errorLeft, errorTop, errorWidth, CREATE_PROJECT_ERROR_BOX_HEIGHT, 0x80300000, CREATE_PROJECT_ERROR_COLOR);
+                ctx.drawString(ctx.fontRenderer(), this.errorMessage, errorLeft + 4, errorTop + 2, CREATE_PROJECT_ERROR_COLOR, false);
+            }
+        }
+
+        private int getButtonY()
+        {
+            int errorSpace = this.errorSpaceVisible ? CREATE_PROJECT_ERROR_VERTICAL_SPACE : 0;
+            return this.dialogTop + this.totalHeight + this.buttonHeight + 10 + errorSpace;
+        }
+
+        private int getErrorTopY()
+        {
+            int inputBottom = this.textField.getY() + this.textField.getHeight();
+            int availableSpace = Math.max(0, this.getButtonY() - inputBottom - CREATE_PROJECT_ERROR_BOX_HEIGHT);
+            return inputBottom + availableSpace / 2;
+        }
+
+        @Override
+        protected boolean applyValue(String projectName)
+        {
+            if (projectName == null || projectName.isBlank())
+            {
+                this.showError(StringUtils.translate("litematica.error.rvc_project_editor.project_name_required"));
+                return false;
+            }
+
+            try
+            {
+                this.gui.createEmptyProject(projectName.trim());
+                this.errorMessage = null;
+                return true;
+            }
+            catch (FileAlreadyExistsException e)
+            {
+                this.showError(StringUtils.translate("litematica.error.rvc_project_manager.project_name_used"));
+                return false;
+            }
+            catch (Exception e)
+            {
+                this.showError(StringUtils.translate("litematica.error.rvc_project.create_failed", e.getMessage()));
+                return false;
+            }
+        }
+
+        private void showError(String message)
+        {
+            this.errorMessage = message;
+            this.textField.setFocused(true);
+
+            if (this.errorSpaceVisible)
+            {
+                return;
+            }
+
+            this.errorSpaceVisible = true;
+            this.setWidthAndHeight(this.dialogWidth, this.dialogHeight + CREATE_PROJECT_ERROR_VERTICAL_SPACE);
+            this.initGui();
+        }
+    }
+
     private record ButtonListener(Type type, GuiRvcProjectManager gui) implements IButtonActionListener
     {
         @Override
@@ -196,7 +326,7 @@ public class GuiRvcProjectManager extends GuiListBase<DirectoryEntry, WidgetDire
         {
             switch (this.type)
             {
-                case CREATE_PROJECT -> this.gui.showNotImplemented("litematica.message.rvc_project_manager.create_project_not_implemented");
+                case CREATE_PROJECT -> this.gui.promptCreateProject();
                 case CLONE_PROJECT -> this.gui.showNotImplemented("litematica.message.rvc_project_manager.clone_project_not_implemented");
                 case OPEN_PROJECT -> this.gui.openSelectedProject();
                 case DELETE_PROJECT -> this.gui.confirmDeleteSelectedProject();

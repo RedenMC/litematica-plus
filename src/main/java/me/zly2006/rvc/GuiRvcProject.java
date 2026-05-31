@@ -66,6 +66,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     private static final int COMMIT_DESCRIPTION_LABEL_FIELD_OFFSET = 16;
     private static final int COMMIT_ERROR_VERTICAL_SPACE = 14;
     private static final int COMMIT_ERROR_BOX_HEIGHT = 12;
+    private static final int COMMIT_ERROR_HORIZONTAL_INSET = 1;
     private static final String SEMANTIC_CHECKOUT_UNSUPPORTED_KEY = "litematica.error.rvc_project.semantic_checkout_restore_unimplemented";
     private static final String SEMANTIC_PULL_UNSUPPORTED_KEY = "litematica.error.rvc_project.semantic_pull_restore_unimplemented";
 
@@ -848,7 +849,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
                 GuiConfirmAction gui = new GuiConfirmAction(
                         420,
                         "litematica.gui.title.rvc_project.detached_head_commit",
-                        new CheckoutMasterBeforeCommitListener(this),
+                        new CheckoutDefaultBranchBeforeCommitListener(this),
                         this,
                         "litematica.gui.message.rvc_project.detached_head_commit",
                         RvcProjectService.DEFAULT_BRANCH
@@ -930,7 +931,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         }
     }
 
-    private void checkoutMasterAndPromptCommitMessage()
+    private void checkoutDefaultBranchAndPromptCommitMessage()
     {
         Minecraft minecraft = Minecraft.getInstance();
 
@@ -952,7 +953,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             GuiConfirmAction gui = new GuiConfirmAction(
                     420,
                     "litematica.gui.title.rvc_project.confirm_reset_checkout_branch",
-                    new ResetAndCheckoutMasterBeforeCommitListener(this),
+                    new ResetAndCheckoutDefaultBranchBeforeCommitListener(this),
                     this,
                     "litematica.gui.message.rvc_project.confirm_reset_checkout_branch",
                     RvcProjectService.DEFAULT_BRANCH
@@ -1533,12 +1534,12 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         }
     }
 
-    private void resetWorkingTreeThenCheckoutMasterAndPromptCommitMessage()
+    private void resetWorkingTreeThenCheckoutDefaultBranchAndPromptCommitMessage()
     {
         try
         {
             RvcProjectService.resetWorkingTreeToHead(this.repositoryDirectory);
-            this.checkoutMasterAndPromptCommitMessage();
+            this.checkoutDefaultBranchAndPromptCommitMessage();
         }
         catch (Exception e)
         {
@@ -1601,13 +1602,13 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
     {
     }
 
-    private static class CommitMessageDialog extends GuiTextInputStackedMultiLine
+    static class CommitMessageDialog extends GuiTextInputStackedMultiLine
     {
         @Nullable private String errorMessage;
         private boolean errorSpaceVisible;
 
         public CommitMessageDialog(int maxTextLength, int displayLines, int maxLines, String titleKey, String defaultText1, String defaultText2,
-                                   GuiRvcProject parent, CommitMessageSetter consumer)
+                                   GuiBase parent, IStringDualConsumerFeedback consumer)
         {
             super(maxTextLength, displayLines, maxLines, titleKey, defaultText1, defaultText2, parent, consumer);
             this.setWidthAndHeight(this.dialogWidth, this.dialogHeight + COMMIT_DESCRIPTION_LABEL_VERTICAL_SPACE);
@@ -1663,8 +1664,10 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
             if (this.errorMessage != null)
             {
                 int errorTop = this.getErrorTopY();
-                RenderUtils.drawOutlinedBox(ctx, this.dialogLeft + 10, errorTop, this.dialogWidth - 20, COMMIT_ERROR_BOX_HEIGHT, 0x80300000, 0xFFFF5555);
-                ctx.drawString(ctx.fontRenderer(), this.errorMessage, this.dialogLeft + 14, errorTop + 2, 0xFFFF5555, false);
+                int errorLeft = this.textField2.getX() + COMMIT_ERROR_HORIZONTAL_INSET;
+                int errorWidth = this.textField2.getWidth() - COMMIT_ERROR_HORIZONTAL_INSET * 2;
+                RenderUtils.drawOutlinedBox(ctx, errorLeft, errorTop, errorWidth, COMMIT_ERROR_BOX_HEIGHT, 0x80300000, 0xFFFF5555);
+                ctx.drawString(ctx.fontRenderer(), this.errorMessage, errorLeft + 4, errorTop + 2, 0xFFFF5555, false);
             }
         }
 
@@ -1788,7 +1791,7 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
                 case VIEW_CHANGES -> this.gui.scanChanges();
                 case REVERT_CHANGES -> this.gui.showNotImplemented("litematica.message.rvc_project.revert_changes_not_implemented");
                 case CREATE_BRANCH -> this.gui.showNotImplemented("litematica.message.rvc_project.create_branch_not_implemented");
-                case PROJECT_EDITOR -> this.gui.updateAreas();
+                case PROJECT_EDITOR -> GuiBase.openGui(new GuiRvcProjectEditor(this.gui.repositoryDirectory, this.gui.projectName));
                 case PROJECT_SETTINGS -> this.gui.promptRemoteEdit(false);
                 case CLOSE_PROJECT -> GuiBase.openGui(new GuiRvcProjectManager());
                 case LITEMATICA_MENU -> GuiBase.openGui(new GuiMainMenu());
@@ -1867,12 +1870,12 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         }
     }
 
-    private record CheckoutMasterBeforeCommitListener(GuiRvcProject gui) implements IConfirmationListener
+    private record CheckoutDefaultBranchBeforeCommitListener(GuiRvcProject gui) implements IConfirmationListener
     {
         @Override
         public boolean onActionConfirmed()
         {
-            this.gui.checkoutMasterAndPromptCommitMessage();
+            this.gui.checkoutDefaultBranchAndPromptCommitMessage();
             return true;
         }
 
@@ -1883,12 +1886,12 @@ public class GuiRvcProject extends GuiBase implements ICompletionListener
         }
     }
 
-    private record ResetAndCheckoutMasterBeforeCommitListener(GuiRvcProject gui) implements IConfirmationListener
+    private record ResetAndCheckoutDefaultBranchBeforeCommitListener(GuiRvcProject gui) implements IConfirmationListener
     {
         @Override
         public boolean onActionConfirmed()
         {
-            this.gui.resetWorkingTreeThenCheckoutMasterAndPromptCommitMessage();
+            this.gui.resetWorkingTreeThenCheckoutDefaultBranchAndPromptCommitMessage();
             return true;
         }
 

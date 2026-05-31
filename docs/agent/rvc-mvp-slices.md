@@ -52,6 +52,7 @@ RVC uses Git as the history/sync control plane and RVC semantic chunks as canoni
   - selected commit metadata panel with Title, Author, optional Description, Date, Version, and Changes
   - conditional scrollbar rendering for history, metadata, and project browser panels, with full-width project browser rows
   - sidebar action buttons anchored to align Close Project with the commit history panel bottom edge
+  - Project Editor page for the active semantic site, including project name edits, local site origin edits, sub-region create/rename/delete/configure, and Save Version commit entry
 - Added integration tests for semantic storage, fake-world capture, object reuse, manifest/local state, Minecraft block state encoding, canonical NBT, and semantic repo init/commit.
 
 Verified with:
@@ -67,12 +68,14 @@ Only test semantic init/commit in singleplayer for now.
 Expected to work:
 
 - create a project from a Litematica area selection
+- create an empty project from Project Browser, open it manually, add a sub-region in Project Editor, then Save Version for the first commit
 - repo appears under `run/rvc-projects/<project>`
 - repo contains `rvc.json`, `local.json`, `objects/sha256/**.rvcchunk`, `README.md`, `.gitignore`, and `.git`
 - commit after changing tracked blocks/block states/block entities
 - chest inventory/block entity changes should hash in singleplayer because capture reads integrated-server state
 - `Scan changes` reports clean after an unchanged commit and dirty after tracked block/block entity changes
 - `Update areas` can expand or shrink the tracked selection and commit the result
+- Project Editor can edit the active site's sub-region metadata and local origin, then Save Version recaptures content and commits
 - project page commit history can be searched and scrolled
 - selected commit metadata shows title/author/date/version/changes and only shows a scrollbar if content overflows
 - unchanged semantic chunks reuse old object hashes
@@ -85,7 +88,9 @@ Known not ready:
 - semantic overlay/verifier loading
 - export to `.litematic`
 - world association warnings for portable repos loaded in a different world
-- update/resize tracked regions
+- rich region preview/auto-resize workflow
+- multi-site Project Editor UI
+- guided GitHub/JGit auth connection flow with credential/key validation
 - dedicated-server authoritative capture
 - entity capture
 - scheduled tick capture
@@ -111,7 +116,7 @@ Verification:
 
 - `rvc.json` and `local.json` round trip
 - same-dimension multi-site manifest is valid
-- overlapping regions are rejected for MVP
+- overlapping regions are allowed and captured as a union mask
 - gaps between regions stay untracked
 - changed fake-world content changes only intersecting RVC chunk hash
 - local site origin is applied before world reads
@@ -199,7 +204,7 @@ Verification:
 - expanding a region captures newly tracked blocks on next commit
 - shrinking a region removes chunk refs with no tracked positions
 - gaps remain untracked
-- overlapping same-site regions are rejected with clear message
+- overlapping same-site regions remain versioned and shared positions are captured once
 
 Still pending:
 

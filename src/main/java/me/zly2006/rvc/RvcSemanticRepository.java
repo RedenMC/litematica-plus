@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import javax.annotation.Nullable;
+import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.revwalk.RevCommit;
 
@@ -46,6 +47,22 @@ public final class RvcSemanticRepository
         }
 
         return new CommitResult(capturedManifest, localState, commit);
+    }
+
+    public static EmptyProjectResult initEmptyProject(Path repositoryDirectory, String projectName, RvcManifest.Site site,
+                                                      RvcLocalState.SitePlacement placement) throws IOException, GitAPIException
+    {
+        Objects.requireNonNull(repositoryDirectory, "repositoryDirectory");
+        Objects.requireNonNull(site, "site");
+        Objects.requireNonNull(placement, "placement");
+
+        RvcManifest manifest = RvcManifest.create(projectName, List.of(site));
+        RvcLocalState localState = RvcLocalState.create(manifest.projectId(), site.id(), Map.of(site.id(), placement));
+
+        writeProjectFiles(repositoryDirectory, manifest, localState);
+        initGitRepository(repositoryDirectory);
+
+        return new EmptyProjectResult(manifest, localState);
     }
 
     public static CommitResult commitSite(Path repositoryDirectory, RvcManifest manifest, RvcLocalState localState,
@@ -128,11 +145,22 @@ public final class RvcSemanticRepository
 
     public static void writeProjectFiles(Path repositoryDirectory, RvcManifest manifest, RvcLocalState localState) throws IOException
     {
+        writeVersionedProjectFiles(repositoryDirectory, manifest);
+        writeLocalState(repositoryDirectory, localState);
+    }
+
+    public static void writeVersionedProjectFiles(Path repositoryDirectory, RvcManifest manifest) throws IOException
+    {
         Files.createDirectories(repositoryDirectory);
         Files.writeString(repositoryDirectory.resolve(MANIFEST), manifest.toJson(), StandardCharsets.UTF_8);
-        Files.writeString(repositoryDirectory.resolve(LOCAL_JSON), localState.toJson(), StandardCharsets.UTF_8);
         Files.writeString(repositoryDirectory.resolve(README), createReadme(manifest.name()), StandardCharsets.UTF_8);
         Files.writeString(repositoryDirectory.resolve(GITIGNORE), "/" + LOCAL_JSON + "\n", StandardCharsets.UTF_8);
+    }
+
+    public static void writeLocalState(Path repositoryDirectory, RvcLocalState localState) throws IOException
+    {
+        Files.createDirectories(repositoryDirectory);
+        Files.writeString(repositoryDirectory.resolve(LOCAL_JSON), localState.toJson(), StandardCharsets.UTF_8);
     }
 
     @Nullable
@@ -158,7 +186,24 @@ public final class RvcSemanticRepository
                 "- `local.json` stores local placement state and is ignored by Git.\n";
     }
 
+    private static void initGitRepository(Path repositoryDirectory) throws GitAPIException
+    {
+        if (Files.isDirectory(repositoryDirectory.resolve(".git")))
+        {
+            return;
+        }
+
+        try (Git ignored = Git.init().setDirectory(repositoryDirectory.toFile()).setInitialBranch(RvcProjectService.DEFAULT_BRANCH).call())
+        {
+            // Repository intentionally has no initial commit in the manual browser flow.
+        }
+    }
+
     public record CommitResult(RvcManifest manifest, RvcLocalState localState, @Nullable RevCommit commit)
+    {
+    }
+
+    public record EmptyProjectResult(RvcManifest manifest, RvcLocalState localState)
     {
     }
 }

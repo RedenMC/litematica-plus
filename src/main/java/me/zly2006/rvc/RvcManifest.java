@@ -223,6 +223,11 @@ public record RvcManifest(
             return new Site(this.id, this.name, this.dimension, this.regions, chunks);
         }
 
+        public Site withName(String name)
+        {
+            return new Site(this.id, name, this.dimension, this.regions, this.chunks);
+        }
+
         public Site withRegions(List<Region> regions)
         {
             return new Site(this.id, this.name, this.dimension, regions, this.chunks);
@@ -243,17 +248,6 @@ public record RvcManifest(
                 if (!regionIds.add(region.id()))
                 {
                     throw new IllegalArgumentException("Duplicate RVC region id in site " + this.id + ": " + region.id());
-                }
-            }
-
-            for (int i = 0; i < this.regions.size(); i++)
-            {
-                for (int j = i + 1; j < this.regions.size(); j++)
-                {
-                    if (this.regions.get(i).overlaps(this.regions.get(j)))
-                    {
-                        throw new IllegalArgumentException("Overlapping RVC regions are not supported in MVP: " + this.regions.get(i).id() + ", " + this.regions.get(j).id());
-                    }
                 }
             }
 
@@ -283,20 +277,6 @@ public record RvcManifest(
             requireNotBlank(this.name, "region name");
             validateVector(this.min, "region min", false);
             validateVector(this.size, "region size", true);
-        }
-
-        private boolean overlaps(Region other)
-        {
-            return overlapsAxis(0, other) && overlapsAxis(1, other) && overlapsAxis(2, other);
-        }
-
-        private boolean overlapsAxis(int axis, Region other)
-        {
-            int minA = this.min.get(axis);
-            int maxA = minA + this.size.get(axis) - 1;
-            int minB = other.min.get(axis);
-            int maxB = minB + other.size.get(axis) - 1;
-            return minA <= maxB && minB <= maxA;
         }
     }
 }

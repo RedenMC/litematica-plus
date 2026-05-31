@@ -88,6 +88,7 @@ public class RvcRepositoryIntegrationTest
         try (Git git = Git.open(repoDir.toFile()))
         {
             Repository repository = git.getRepository();
+            IntegrationTestSupport.assertEquals(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH, repository.getFullBranch(), "initial commit should be on the default branch");
 
             try (RevWalk revWalk = new RevWalk(repository))
             {
@@ -131,8 +132,8 @@ public class RvcRepositoryIntegrationTest
 
         try (Repository remoteRepository = new FileRepositoryBuilder().setGitDir(remoteDir.toFile()).build())
         {
-            ObjectId masterId = remoteRepository.resolve(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH);
-            IntegrationTestSupport.assertEquals(commit.getId(), masterId, "remote should receive pushed master branch");
+            ObjectId defaultBranchId = remoteRepository.resolve(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH);
+            IntegrationTestSupport.assertEquals(commit.getId(), defaultBranchId, "remote should receive pushed main branch");
             IntegrationTestSupport.assertTrue(pushStatuses.stream().anyMatch(status -> status.contains(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH)), "push status should report the pushed branch");
         }
     }
@@ -227,8 +228,8 @@ public class RvcRepositoryIntegrationTest
 
         try (Repository remoteRepository = new FileRepositoryBuilder().setGitDir(remoteDir.toFile()).build())
         {
-            ObjectId masterId = remoteRepository.resolve(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH);
-            IntegrationTestSupport.assertEquals(second.getId(), masterId, "detached push should publish the last active branch tip");
+            ObjectId defaultBranchId = remoteRepository.resolve(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH);
+            IntegrationTestSupport.assertEquals(second.getId(), defaultBranchId, "detached push should publish the last active branch tip");
             IntegrationTestSupport.assertTrue(pushStatuses.stream().anyMatch(status -> status.contains(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH)), "detached push status should report the pushed branch");
         }
 
@@ -446,7 +447,7 @@ public class RvcRepositoryIntegrationTest
         }
 
         List<String> historyAfterRejectedCommit = RvcProjectService.listCommits(repoDir).stream().map(RvcProjectService.CommitInfo::id).toList();
-        IntegrationTestSupport.assertEquals(List.of(second.getName(), first.getName()), historyAfterRejectedCommit, "branch history should stay on master after rejected detached commit");
+        IntegrationTestSupport.assertEquals(List.of(second.getName(), first.getName()), historyAfterRejectedCommit, "branch history should stay on main after rejected detached commit");
     }
 
     private static void resetWorkingTreeToHeadDiscardsTrackedDirtyChanges() throws Exception

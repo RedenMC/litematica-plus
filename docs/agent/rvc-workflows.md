@@ -39,6 +39,9 @@ Implementation:
 - The project browser root is `<game run dir>/rvc-projects/`.
 - The project browser `Delete Project` action shows a confirmation dialog, then recursively deletes only validated RVC repositories under `<game run dir>/rvc-projects/`.
 - After deletion, the browser clears selection, refreshes the directory listing, and reports success or failure in the GUI.
+- The project browser `Create Project` action prompts for a project name and creates an empty semantic repo. After the popup closes, the user remains in Project Browser and can open the new project/editor manually.
+- Browser-created projects write `rvc.json`, `local.json`, `README.md`, `.gitignore`, and `.git`, but intentionally create no initial commit and start with zero sub-regions/chunk refs.
+- Empty browser-created projects default local origin to the player block position when available, otherwise `0,0,0`; dimension defaults to the current world dimension when available, otherwise `minecraft:overworld`.
 - The browser can navigate subdirectories under `rvc-projects`; project repositories are shown as selectable project rows, while ordinary directories are used for navigation.
 - The browser uses full-width rows; when entries overflow, the conditional scrollbar renders on top of the row area instead of reserving a visible row gutter.
 
@@ -61,6 +64,37 @@ Current behavior:
 - The metadata panel extends down to the sidebar action buttons. The Project Editor, Project Settings, and Close Project buttons keep fixed spacing, and Close Project aligns visually with the bottom of the commit history panel.
 - `Changes` still reports `not calculated` until real semantic diff/change-list generation exists.
 
+## Project Editor
+
+Entry point:
+
+- `GuiRvcProject` Project Editor sidebar button.
+
+Current behavior:
+
+Semantic `rvc.json` repos:
+
+1. Opens `GuiRvcProjectEditor`.
+2. Exposes the active site only; MVP projects are treated as `1 project = 1 active site = many sub-regions`.
+3. Shows project name, local site origin, dimension, selected sub-region coordinate fields, and a scrollable sub-region list.
+4. Project name edits are written immediately to versioned `rvc.json` and generated `README.md`.
+5. Sub-region create/rename/delete/min/size edits are written immediately to versioned `rvc.json`.
+6. Local site origin edits are written immediately to ignored `local.json`.
+7. `Set to Player` updates local origin only when the current world dimension matches the local site dimension.
+8. `Save Version` opens the shared commit popup and runs normal semantic capture/commit, which refreshes chunk refs in `rvc.json`.
+9. The page does not expose multi-site selection, Analyze Area, origin mode, Apply Changes, or page-local Discard Changes.
+
+Sub-region behavior:
+
+- Sub-regions are tracking masks, not block owners.
+- Overlapping sub-regions are allowed.
+- Capture, scan, and commit use the union of all active-site sub-regions, so a shared block coordinate is stored once in semantic chunks.
+
+Important limitation:
+
+- Between a region metadata edit and Save Version, `rvc.json` may contain edited regions whose chunk refs have not yet been recaptured. Save Version is the canonical content capture point for this MVP.
+- Browser-created empty projects can open the editor with zero sub-regions, but Save Version is blocked until at least one sub-region is added.
+
 ## Commit
 
 Entry point:
@@ -69,7 +103,7 @@ Entry point:
 
 Current behavior:
 
-1. Blocks commits on detached HEAD and prompts to checkout `master` first.
+1. Blocks commits on detached HEAD and prompts to checkout `main` first.
 2. Prompts for a non-blank commit title and an optional multi-line commit description.
 3. If the repo has `rvc.json`, reads semantic manifest and `local.json`.
 4. Captures the active site's tracked chunks through `RvcMinecraftWorldReader`; in singleplayer this uses the integrated server's matching `ServerLevel` on the server thread.
@@ -176,11 +210,11 @@ Entry point:
 
 Current behavior:
 
-- Shows a "Checkout master" style path using `RvcProjectService.DEFAULT_BRANCH`, currently JGit's `master`.
+- Shows a "Checkout main" style path using `RvcProjectService.DEFAULT_BRANCH`.
 - Can reset dirty tracked changes before checkout if confirmed.
 - After checkout, commit prompt can continue.
 
-Branch naming note: the default branch is `Constants.MASTER`. If this project moves to `main`, update service logic, tests, and translations together.
+Branch naming note: newly-created RVC repositories initialize Git with default branch `main`.
 
 ## Pull
 
@@ -227,6 +261,7 @@ Known gaps:
 
 - Display remote URL/current branch.
 - Surface per-ref push statuses and SSH/auth errors cleanly.
+- GitHub account/JGit auth setup needs a guided MVP flow with credential/key validation and a connection test.
 
 ## Remote URL
 

@@ -168,10 +168,11 @@ Required rules:
 - A chunk object must only contain positions tracked by the union of regions intersecting that chunk.
 - If a region is resized and a chunk has no tracked positions left, remove that chunk entry from the manifest.
 
-MVP overlap policy:
+Overlap policy:
 
-- Overlapping regions within the same site are rejected during init/update.
-- Later versions may allow explicit shared ownership, but storage still stores the overlapped world position once.
+- Overlapping same-site regions are valid tracking masks.
+- Storage uses the union of all region volumes, so an overlapped world position is stored once.
+- If a future Litematic import finds conflicting contents for the same project coordinate across overlapping sub-regions, reject the import instead of guessing.
 
 ## Local State: `local.json`
 
@@ -340,9 +341,9 @@ Algorithm:
 
 1. Validate manifest and local placement.
 2. For each selected site, collect regions.
-3. Reject overlapping same-site regions for MVP.
+3. Treat same-site regions as non-owning tracking masks. Overlapping regions are allowed.
 4. Enumerate all RVC chunks intersecting the site regions.
-5. For each RVC chunk, build `tracked_mask` from the union of all intersecting region areas.
+5. For each RVC chunk, build `tracked_mask` from the union of all intersecting region areas, so an overlapped position is stored once.
 6. For every true mask bit, map project-relative position to world position.
 7. Read block state from authoritative world state.
 8. If block has a block entity, read and normalize block entity NBT.
@@ -435,6 +436,6 @@ Validation:
 - Same chunk content produces the same SHA-256 hash.
 - Changing one block changes only the intersecting RVC chunk object hash.
 - Independent region gaps remain untracked.
-- Region overlap is rejected with a clear error.
+- Overlapping regions are preserved and captured as a union mask.
 - Missing local site placement reports `UNKNOWN`.
 - Client-only multiplayer cannot claim complete clean state.

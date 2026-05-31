@@ -23,7 +23,9 @@ Done:
 - Semantic repo init and commit through JGit.
 - Project listing supports both semantic `rvc.json` repos and legacy `index.json` repos.
 - Project browser delete is implemented with confirmation and validated recursive deletion under `run/rvc-projects`.
+- Project browser manual Create Project flow creates an empty semantic repo with `rvc.json`, ignored `local.json`, `.git`, and no initial commit. After the name popup closes, the user remains in Project Browser and can open Project Editor manually.
 - Project/project-manager UI polish: project browser navigation rooted at `rvc-projects`, conditional scrollbar rendering, searchable/scrollable commit history, and selected commit metadata with title/author/date/version/changes.
+- Project Editor MVP opens from the project page for semantic repos, exposes the single active site, edits project name/sub-regions in `rvc.json`, edits local site origin in ignored `local.json`, and uses Save Version to capture content/commit.
 - Integration coverage for semantic storage, object reuse, fake-world capture, canonical Minecraft state encoding, and semantic commits.
 
 Not done:
@@ -32,10 +34,32 @@ Not done:
 - Semantic checkout/pull restore.
 - Legacy `index.json` update areas.
 - World association UX: projects remain portable, but `local.json` should eventually track current-world identity/hints and warn before using a repo in a different world.
+- Optional import workflow for existing `.litematic` files into semantic RVC repos, preserving sub-region definitions so users do not need to paste, reselect, and recreate sub-regions manually.
 - Rich update-area preview and explicit origin-change controls.
+- Multi-site Project Editor UX; the MVP editor intentionally exposes only the active `main` site even though the manifest supports sites internally.
 - Dedicated-server multiplayer support.
 - Scheduled tick capture.
 - Entity capture/restore.
+
+### Import Existing `.litematic` Files
+
+Current state:
+
+- RVC creates semantic repos from world selections or empty browser-created projects.
+- Export to `.litematic` is still pending.
+- Importing an existing `.litematic` directly into RVC is not implemented.
+
+Required behavior:
+
+- Convert an existing `.litematic` into a semantic RVC repo.
+- Preserve the `.litematic` sub-region names and bounds in `rvc.json`.
+- Store block/block-entity content as semantic chunks.
+- Treat overlapping sub-regions as valid tracking masks. RVC content should use union semantics, so each project coordinate is stored once even if covered by multiple sub-regions.
+- If an imported file somehow contains conflicting contents for the same project coordinate across overlapping sub-regions, reject the import with a clear error instead of guessing.
+
+Reason:
+
+- Lets users version existing schematic files without pasting them into a world, reselecting the build, and recreating all sub-regions manually.
 
 Use `docs/agent/rvc-mvp-slices.md` as the current thin-slice plan.
 
@@ -289,11 +313,14 @@ Required behavior:
 - Display remote URL and current branch.
 - Show per-ref push status.
 - Show pull result details: fast-forward, merge, already up to date, conflict, failed.
+- Rework GitHub account/auth connection for JGit into an explicit MVP flow instead of relying on raw remote URL prompts and opaque SSH failures.
+- Add a connection/setup UI that can guide GitHub remote auth, validate credentials/keys, and test JGit push/pull before the user depends on it.
 - Consider a remote settings button instead of only prompting on first push.
 
 Relevant file:
 
 - `src/main/java/me/zly2006/rvc/RvcProjectService.java`
+- `src/main/java/me/zly2006/rvc/GuiRvcProject.java`
 
 ### Replace Current SSH Key Handling And Remove EdDSA Crypto Dependency
 

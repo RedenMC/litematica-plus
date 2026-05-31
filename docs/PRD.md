@@ -446,13 +446,13 @@ Stage,Logic,User Interaction
 3. Trimming Check,"Check if ""Accepted"" blocks fall outside the selected volume.",[Confirm Trim] or adjust volume.
 4. Overlap Check,Detect if boxes now share the same world-space.,[Acknowledge Overlap] and finalize merge.
 
-### 4.6.3 Shared Ownership & Overlaps
+### 4.6.3 Tracking Masks & Overlaps
 
 When merging causes two or more Sub-Regions to occupy the same physical space:
 
-1. **Shared Ownership**: The system allows sub-regions to overlap. A single block in the world can be tracked by multiple sub-regions simultaneously.
-2. **Synchronization**: Any change made to a physical block within an overlapping zone is automatically reflected in all sub-regions that "own" that space.
-3. **Visual Feedback**: In the Selection GUI, overlapping areas are highlighted to ensure the user is aware that multiple boxes are tracking that specific component.
+1. **Tracking Masks**: The system allows sub-regions to overlap. Sub-regions do not own blocks; they define tracking masks.
+2. **Union Storage**: A physical block inside multiple sub-regions is captured once in the RVC chunk object.
+3. **Export Preservation**: Litematic export should preserve the user's overlapping sub-region names and bounds.
 
 ### 4.6.4 Final Merge Validation Workflow
 

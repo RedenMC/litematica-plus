@@ -291,7 +291,7 @@ public abstract class GuiSchematicSaveBase extends GuiSchematicBrowserBase imple
             }
             catch (FileAlreadyExistsException e)
             {
-                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_project.repository_exists", e.getFile());
+                this.gui.addMessage(MessageType.ERROR, "litematica.error.rvc_project_manager.project_name_used");
             }
             catch (Exception e)
             {

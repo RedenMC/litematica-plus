@@ -45,11 +45,13 @@ final class RvcSemanticStorageIntegrationTest
         IntegrationTestSupport.run("semantic chunk encoding is deterministic and round trips", RvcSemanticStorageIntegrationTest::semanticChunkEncodingIsDeterministicAndRoundTrips);
         IntegrationTestSupport.run("semantic chunk store writes content addressed objects once", RvcSemanticStorageIntegrationTest::semanticChunkStoreWritesContentAddressedObjectsOnce);
         IntegrationTestSupport.run("semantic manifest and local state round trip", RvcSemanticStorageIntegrationTest::semanticManifestAndLocalStateRoundTrip);
-        IntegrationTestSupport.run("semantic manifest rejects overlapping regions", RvcSemanticStorageIntegrationTest::semanticManifestRejectsOverlappingRegions);
+        IntegrationTestSupport.run("semantic manifest allows overlapping regions as tracked union masks", RvcSemanticStorageIntegrationTest::semanticManifestAllowsOverlappingRegionsAsTrackedUnionMasks);
         IntegrationTestSupport.run("minecraft block state strings are canonical", RvcSemanticStorageIntegrationTest::minecraftBlockStateStringsAreCanonical);
         IntegrationTestSupport.run("canonical block entity nbt sorts keys and ignores position", RvcSemanticStorageIntegrationTest::canonicalBlockEntityNbtSortsKeysAndIgnoresPosition);
         IntegrationTestSupport.run("project service maps selection to semantic site", RvcSemanticStorageIntegrationTest::projectServiceMapsSelectionToSemanticSite);
         IntegrationTestSupport.run("project service updates regions from existing local origin", RvcSemanticStorageIntegrationTest::projectServiceUpdatesRegionsFromExistingLocalOrigin);
+        IntegrationTestSupport.run("project editor helpers separate versioned and local state", RvcSemanticStorageIntegrationTest::projectEditorHelpersSeparateVersionedAndLocalState);
+        IntegrationTestSupport.run("project service creates empty browser project without commit", RvcSemanticStorageIntegrationTest::projectServiceCreatesEmptyBrowserProjectWithoutCommit);
         IntegrationTestSupport.run("capture stores gaps as untracked positions", RvcSemanticStorageIntegrationTest::captureStoresGapsAsUntrackedPositions);
         IntegrationTestSupport.run("capture changes only the intersecting storage chunk hash", RvcSemanticStorageIntegrationTest::captureChangesOnlyTheIntersectingStorageChunkHash);
         IntegrationTestSupport.run("capture applies local site origin before reading world", RvcSemanticStorageIntegrationTest::captureAppliesLocalSiteOriginBeforeReadingWorld);
@@ -160,26 +162,35 @@ final class RvcSemanticStorageIntegrationTest
         IntegrationTestSupport.assertEquals(List.of(8000, 70, -3000), decodedLocal.sites().get("overworld_remote").origin(), "local remote site origin");
     }
 
-    private static void semanticManifestRejectsOverlappingRegions()
+    private static void semanticManifestAllowsOverlappingRegionsAsTrackedUnionMasks() throws Exception
     {
-        try
-        {
-            RvcManifest.create("Overlap", List.of(new RvcManifest.Site(
-                    "main",
-                    "Main",
-                    "minecraft:overworld",
-                    List.of(
-                            new RvcManifest.Region("a", "A", List.of(0, 0, 0), List.of(16, 16, 16)),
-                            new RvcManifest.Region("b", "B", List.of(15, 0, 0), List.of(16, 16, 16))
-                    ),
-                    Map.of()
-            )));
-            throw new AssertionError("overlapping regions should be rejected for MVP");
-        }
-        catch (IllegalArgumentException e)
-        {
-            IntegrationTestSupport.assertTrue(e.getMessage().contains("Overlapping RVC regions"), "overlap error should explain the rejected regions");
-        }
+        Path repoDir = Files.createTempDirectory("rvc-overlap-union-");
+        RvcManifest manifest = RvcManifest.create("Overlap", List.of(new RvcManifest.Site(
+                "main",
+                "Main",
+                "minecraft:overworld",
+                List.of(
+                        new RvcManifest.Region("a", "A", List.of(0, 0, 0), List.of(2, 1, 1)),
+                        new RvcManifest.Region("b", "B", List.of(1, 0, 0), List.of(2, 1, 1))
+                ),
+                Map.of()
+        )));
+        RvcManifest.Site site = manifest.site("main");
+        FakeWorldReader reader = new FakeWorldReader("minecraft:stone");
+        reader.setBlock(new RvcIntPosition(1, 0, 0), "minecraft:dirt");
+
+        RvcCaptureEngine.Result result = RvcCaptureEngine.captureSite(repoDir, site, placementAt(0, 0, 0), reader);
+        RvcChunk chunk = readOnlyCapturedChunk(repoDir, result);
+
+        IntegrationTestSupport.assertEquals(2, site.regions().size(), "overlapping region definitions should be preserved");
+        IntegrationTestSupport.assertEquals(3, chunk.trackedCount(), "overlapping regions should track the union, not duplicate shared blocks");
+        IntegrationTestSupport.assertEquals(3, reader.requestedPositions.size(), "overlap position should be read once");
+        IntegrationTestSupport.assertTrue(chunk.isTracked(0), "first region start should be tracked");
+        IntegrationTestSupport.assertTrue(chunk.isTracked(1), "shared overlap should be tracked once");
+        IntegrationTestSupport.assertTrue(chunk.isTracked(2), "second region end should be tracked");
+        IntegrationTestSupport.assertEquals("minecraft:stone", chunk.blockStateAtTrackedOrdinal(0), "first tracked block state");
+        IntegrationTestSupport.assertEquals("minecraft:dirt", chunk.blockStateAtTrackedOrdinal(1), "overlapped tracked block state");
+        IntegrationTestSupport.assertEquals("minecraft:stone", chunk.blockStateAtTrackedOrdinal(2), "last tracked block state");
     }
 
     private static void minecraftBlockStateStringsAreCanonical()
@@ -273,6 +284,90 @@ final class RvcSemanticStorageIntegrationTest
 
         IntegrationTestSupport.assertEquals("line", renamed.get(0).id(), "same bounds should preserve id while renaming");
         IntegrationTestSupport.assertEquals("Renamed Line", renamed.get(0).name(), "region display name should update");
+    }
+
+    private static void projectEditorHelpersSeparateVersionedAndLocalState() throws Exception
+    {
+        Path repoDir = Files.createTempDirectory("rvc-editor-state-");
+        FakeWorldReader reader = new FakeWorldReader("minecraft:stone");
+        RvcSemanticRepository.CommitResult init = RvcSemanticRepository.initProject(repoDir, "Editor", singleLineSite(1), placementAt(10, 64, 10), reader, player("Editor"));
+        String manifestBeforeLocalEdit = Files.readString(repoDir.resolve(RvcSemanticRepository.MANIFEST));
+
+        RvcProjectService.updateSemanticLocalOrigin(repoDir, new BlockPos(20, 70, 20));
+        RvcProjectService.ProjectEditorState localState = RvcProjectService.readSemanticProjectEditorState(repoDir);
+
+        IntegrationTestSupport.assertEquals(new BlockPos(20, 70, 20), localState.localOrigin(), "local origin edit should update local.json");
+        IntegrationTestSupport.assertEquals(manifestBeforeLocalEdit, Files.readString(repoDir.resolve(RvcSemanticRepository.MANIFEST)), "local origin edit must not touch rvc.json");
+
+        try (Git git = Git.open(repoDir.toFile()))
+        {
+            IntegrationTestSupport.assertTrue(git.status().call().isClean(), "local-only editor change should keep Git status clean");
+        }
+
+        RvcProjectService.updateSemanticProjectName(repoDir, "Editor Renamed");
+        RvcManifest renamedManifest = RvcSemanticRepository.readManifest(repoDir);
+
+        IntegrationTestSupport.assertEquals("Editor Renamed", renamedManifest.name(), "project name edit should update manifest name");
+        IntegrationTestSupport.assertEquals("Editor Renamed", renamedManifest.site("main").name(), "single-site MVP should keep site name aligned with project name");
+
+        RvcProjectService.updateSemanticRegion(repoDir, "line", "Long Line", new BlockPos(0, 0, 0), new BlockPos(2, 1, 1));
+        RvcManifest resizedManifest = RvcSemanticRepository.readManifest(repoDir);
+
+        IntegrationTestSupport.assertEquals(List.of(2, 1, 1), resizedManifest.site("main").regions().get(0).size(), "region size edit should update versioned manifest");
+        IntegrationTestSupport.assertEquals(init.manifest().site("main").chunks(), resizedManifest.site("main").chunks(), "editor metadata edits should not recapture chunk refs until commit");
+
+        RvcManifest.Region added = RvcProjectService.createSemanticRegion(repoDir, "Extra", new BlockPos(3, 0, 0), new BlockPos(1, 1, 1));
+        IntegrationTestSupport.assertEquals(2, RvcSemanticRepository.readManifest(repoDir).site("main").regions().size(), "new region should be versioned");
+
+        RvcProjectService.deleteSemanticRegion(repoDir, added.id());
+        IntegrationTestSupport.assertEquals(1, RvcSemanticRepository.readManifest(repoDir).site("main").regions().size(), "deleted region should be removed from versioned manifest");
+    }
+
+    private static void projectServiceCreatesEmptyBrowserProjectWithoutCommit() throws Exception
+    {
+        Path gameDir = Files.createTempDirectory("rvc-empty-project-game-");
+        BlockPos origin = new BlockPos(12, 65, -4);
+        RvcProjectService.EmptyProjectResult created = RvcProjectService.createEmptyProject(gameDir, "Manual Project", origin, "minecraft:overworld");
+        Path repoDir = created.repositoryDirectory();
+
+        IntegrationTestSupport.assertEquals("Manual Project", created.projectName(), "manual project display name");
+        IntegrationTestSupport.assertTrue(Files.isDirectory(repoDir.resolve(".git")), "manual project should initialize Git repository");
+        IntegrationTestSupport.assertTrue(Files.isRegularFile(repoDir.resolve(RvcSemanticRepository.MANIFEST)), "manual project should write manifest");
+        IntegrationTestSupport.assertTrue(Files.isRegularFile(repoDir.resolve(RvcSemanticRepository.LOCAL_JSON)), "manual project should write local state");
+        IntegrationTestSupport.assertEquals(null, RvcRepository.resolveHead(repoDir), "manual project should start without an initial commit");
+        IntegrationTestSupport.assertEquals(0, RvcProjectService.listCommits(repoDir).size(), "manual project history should start empty");
+
+        try (Git git = Git.open(repoDir.toFile()))
+        {
+            IntegrationTestSupport.assertEquals(Constants.R_HEADS + RvcProjectService.DEFAULT_BRANCH, git.getRepository().getFullBranch(), "manual project should initialize the default branch");
+        }
+
+        RvcManifest manifest = RvcSemanticRepository.readManifest(repoDir);
+        RvcLocalState localState = RvcSemanticRepository.readLocalState(repoDir);
+
+        IntegrationTestSupport.assertEquals(0, manifest.site("main").regions().size(), "manual project should start with no regions");
+        IntegrationTestSupport.assertEquals(0, manifest.site("main").chunks().size(), "manual project should start with no chunk refs");
+        IntegrationTestSupport.assertEquals(List.of(12, 65, -4), localState.sites().get("main").origin(), "manual project local origin");
+
+        RvcProjectService.ProjectEditorState editorState = RvcProjectService.readSemanticProjectEditorState(repoDir);
+        IntegrationTestSupport.assertEquals(0, editorState.regions().size(), "project editor should open empty manual project");
+
+        RvcProjectService.createSemanticRegion(repoDir, "First Area", BlockPos.ZERO, new BlockPos(1, 1, 1));
+        RvcManifest withRegion = RvcSemanticRepository.readManifest(repoDir);
+        RvcSemanticRepository.CommitResult firstCommit = RvcSemanticRepository.commitSite(
+                repoDir,
+                withRegion,
+                RvcSemanticRepository.readLocalState(repoDir),
+                "main",
+                new FakeWorldReader("minecraft:stone"),
+                player("ManualProject"),
+                "first version"
+        );
+
+        IntegrationTestSupport.assertNotNull(firstCommit.commit(), "manual project first region save should create first commit");
+        IntegrationTestSupport.assertEquals(firstCommit.commit().getId(), RvcRepository.resolveHead(repoDir), "manual project first commit should become HEAD");
+        IntegrationTestSupport.assertEquals(1, firstCommit.manifest().site("main").regions().size(), "first commit should keep the new region");
+        IntegrationTestSupport.assertEquals(1, firstCommit.manifest().site("main").chunks().size(), "first commit should capture tracked content");
     }
 
     private static void captureStoresGapsAsUntrackedPositions() throws Exception
